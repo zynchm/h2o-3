@@ -612,7 +612,7 @@ class ModelBase(h2o_meta(Keyed)):
         These coefficients can be used to evaluate variable importance.
         """
         if self._model_json["output"]["model_category"]=="Multinomial":
-            tbl = self._model_json["output"]["standardized_coefficient_magnitudes"]
+            tbl = self._model_json["output"]["coefficients_table_multinomials_with_class_names"]
             if tbl is None:
                 return None
             return {name: coef for name, coef in zip(tbl["names"], tbl["coefficients"])}
