@@ -57,7 +57,7 @@ class RadixCount extends MRTask<RadixCount> {
           long ctrVal = isIntVal ?
                   BigInteger.valueOf(chk.at8(r)*_ascending).subtract(_base).add(ONE).shiftRight(_shift).longValue():
                   MathUtils.convertDouble2BigInteger(_ascending*chk.atd(r)).subtract(_base).add(ONE).shiftRight(_shift).longValue();
-          tmp[(int) ctrVal]++;
+          tmp[(int) ctrVal]++;  // ctrVal is the MSB value of chk.at8(r)
         }
       } else {    // contains NAs in column
         // There are some NA in the column so have to branch.  TODO: warn user

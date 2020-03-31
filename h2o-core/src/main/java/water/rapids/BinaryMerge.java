@@ -129,7 +129,7 @@ class BinaryMerge extends DTask<BinaryMerge> {
     long t0 = System.nanoTime();
 
     SingleThreadRadixOrder.OXHeader leftSortedOXHeader = DKV.getGet(getSortedOXHeaderKey(/*left=*/true, _leftSB._msb));
-    if (leftSortedOXHeader == null) {
+    if (leftSortedOXHeader == null) { // waste of time to loop through all possible MSB values.
       if( !_allRight ) { tryComplete(); return; }
       throw H2O.unimpl();  // TODO pass through _allRight and implement
     }
@@ -146,7 +146,7 @@ class BinaryMerge extends DTask<BinaryMerge> {
 
     // get left batches
     _leftKO.initKeyOrder(_leftSB._msb,/*left=*/true);
-    final long leftN = leftSortedOXHeader._numRows;
+    final long leftN = leftSortedOXHeader._numRows; // number of leftframe rows to fetch for leftMSB
     assert leftN >= 1;
 
     // get right batches
@@ -436,10 +436,10 @@ class BinaryMerge extends DTask<BinaryMerge> {
         // may be the reason for the cartesian join
         long t00 = System.nanoTime();
         // TODO could loop through batches rather than / and % wastefully
-        long globalRowNumber = _leftKO.at8order(j);
+        long globalRowNumber = _leftKO.at8order(j); // read left merge column global row number
         _timings[17] += (System.nanoTime() - t00)/1e9;
         t00 = System.nanoTime();
-        int chkIdx = _leftSB._vec.elem2ChunkIdx(globalRowNumber); //binary search in espc
+        int chkIdx = _leftSB._vec.elem2ChunkIdx(globalRowNumber); //locate left frame row chunk index
         _timings[15] += (System.nanoTime() - t00)/1e9;
         // the key is the same within this left dup range, but still need to fetch left non-join columns
         _leftKO._perNodeNumRowsToFetch[_leftSB._chunkNode[chkIdx]]++;
@@ -575,7 +575,6 @@ class BinaryMerge extends DTask<BinaryMerge> {
       _timings[4] += ((t1 = System.nanoTime()) - t0) / 1e9;
       t0 = t1;
       chunksGetRawRemoteRows(perNodeLeftRows, perNodeRightRows, grrrsLeft, grrrsRite); // need this one
-
       chunksPopulateRetFirst(batchSizeUUID, numColsInResult, numLeftCols, perNodeLeftLoc, grrrsLeft,
               perNodeRightLoc, grrrsRite, frameLikeChunks, frameLikeChunks4Strings, frameLikeChunksLongs);
       _timings[10] += ((t1 = System.nanoTime()) - t0) / 1e9;

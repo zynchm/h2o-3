@@ -8,8 +8,9 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import static java.math.BigInteger.ZERO;
+
 import static java.math.BigInteger.ONE;
+import static java.math.BigInteger.ZERO;
 import static water.rapids.SingleThreadRadixOrder.getSortedOXHeaderKey;
 
 public class Merge {
@@ -127,34 +128,38 @@ public class Merge {
     final BigInteger riteBase = riteFrameEmpty?ZERO : riteIndex._base [0];
 
     // initialize for double columns, may not be used....
-    long leftMSBfrom = riteBase.subtract(leftBase).shiftRight(leftShift).longValue();  // value when all frames nonempty
-    boolean riteBaseExceedsleftBase=riteFrameEmpty?false:riteBase.compareTo(leftBase)>0;
+    long leftMSBfrom = riteBase.subtract(leftBase).shiftRight(leftShift).longValue();    // calculate the MSB or base differences between rite and left base 
+    boolean riteBaseExceedsleftBase=riteFrameEmpty?false:riteBase.compareTo(leftBase)>0; // true if rite base minimum value exceeds left base minimum value
     // deal with the left range below the right minimum, if any
-    if (riteBaseExceedsleftBase) {  // right branch has higher minimum column value
+    if (riteBaseExceedsleftBase) {  // left base starts at lower value than rite frame
       // deal with the range of the left below the start of the right, if any
       assert leftMSBfrom >= 0;
-      if (leftMSBfrom>255) {
+      if (leftMSBfrom > 255) {
         // The left range ends before the right range starts.  So every left row is a no-match to the right
         leftMSBfrom = 256;  // so that the loop below runs for all MSBs (0-255) to fetch the left rows only
       }
       // run the merge for the whole lefts that end before the first right.
       // The overlapping one with the right base is dealt with inside
-      // BinaryMerge (if _allLeft)
-      if (allLeft) for (int leftMSB=0; leftMSB<leftMSBfrom; leftMSB++) {
-        BinaryMerge bm = new BinaryMerge(new BinaryMerge.FFSB(leftFrame, leftMSB, leftShift,
-                leftIndex._bytesUsed, leftIndex._base), new BinaryMerge.FFSB(rightFrame,/*rightMSB*/-1, riteShift,
-                riteIndex._bytesUsed, riteIndex._base),
-                true);
+      if (allLeft) { // no need to iterate from 0 to 255, only need to go from leftbase MSB to min(max leftMSB, ritebaseMSB)
+        int leftMSBStart = (int)leftBase.shiftRight(leftShift).longValue();
+        int leftMSBEnd = (int)riteBase.shiftRight(riteShift).longValue();
+        //for (int leftMSB = 0; leftMSB < leftMSBfrom; leftMSB++) {  // grab only left frame and add to final merged frame
+        for (int leftMSB = leftMSBStart; leftMSB <= leftMSBEnd; leftMSB++) { // leftFrame MSB can be calculated differently from rightFrame due to different shift
+          BinaryMerge bm = new BinaryMerge(new BinaryMerge.FFSB(leftFrame, leftMSB, leftShift,
+                  leftIndex._bytesUsed, leftIndex._base), new BinaryMerge.FFSB(rightFrame,/*rightMSB*/-1, riteShift,
+                  riteIndex._bytesUsed, riteIndex._base),
+                  true);
           bmList.add(bm);
           fs.add(new RPC<>(SplitByMSBLocal.ownerOfMSB(leftMSB), bm).call());
         }
+      }
     } else {
       // completely ignore right MSBs below the left base
       assert leftMSBfrom <= 0;
       leftMSBfrom = 0;
     }
 
-    BigInteger rightS = BigInteger.valueOf(256L<<riteShift);
+    BigInteger rightS = BigInteger.valueOf(256L<<riteShift);  // get max value of key values possible
     long leftMSBto = leftFrameEmpty?0:riteBase.add(rightS).subtract(ONE).subtract(leftBase).shiftRight(leftShift).longValue();
     // deal with the left range above the right maximum, if any.  For doubles, -1 from shift to avoid negative outcome
     boolean leftRangeAboveRightMax = leftIndex._isCategorical[0]?
