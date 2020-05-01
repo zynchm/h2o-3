@@ -1722,11 +1722,19 @@ public class ArrayUtils {
     return removeIds(a,indeces);
   }
 
-  public static int[] removeIds(int[] x, int[] ids) {
+  public static int[] removeIds2(int[] x, int[] ids) {
     int [] res = new int[x.length-ids.length];
     int j = 0;
     for(int i = 0; i < x.length; ++i)
       if(j == ids.length || x[i] != ids[j]) res[i-j] = x[i]; else ++j;  // need to actual content of x[i]
+    return res;
+  }
+
+  public static int[] removeIds(int[] x, int[] ids) {
+    int [] res = new int[x.length-ids.length];
+    int j = 0;
+    for(int i = 0; i < x.length; ++i)
+      if(j == ids.length || i != ids[j]) res[i-j] = x[i]; else ++j;
     return res;
   }
   public static double[] removeIds(double[] x, int[] ids) {
