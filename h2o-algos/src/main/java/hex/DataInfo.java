@@ -1,10 +1,7 @@
 package hex;
 
 import water.*;
-import water.fvec.Chunk;
-import water.fvec.Frame;
-import water.fvec.InteractionWrappedVec;
-import water.fvec.Vec;
+import water.fvec.*;
 import water.util.ArrayUtils;
 
 import java.util.ArrayList;
@@ -528,50 +525,34 @@ public class DataInfo extends Keyed<DataInfo> {
       catLvls = cs;
     }
 
-    // now do the interaction vecs -- this happens to always sit first in the "nums" section of _adaptedFrame
-    // if we have enum and num interaction or num and num interaction.  These have the exact same filtering logic
-    // as the categoricals above
-    int prev=j=0; // reset j to index into numerical columns both from interactions and from predictors
-    boolean checkInteraction = false;
-    if( _interactionVecs!=null) {
-      for (j = 0; j < _interactionVecs.length; j++) { // only count interaction for enum by num, num by num
-        if (_interactionVecs[j] >= _cats) {
-          checkInteraction = true;          // true if enum by num or num by num interactions are found
-          prev = _interactionVecs.length-j; // prev index into non interaction numeric columns only
-          break;
-        }
+    // now do the interaction vecs -- these happen to always sit first in the "nums" section of _adaptedFrame
+    // also, these have the exact same filtering logic as the categoricals above
+    int prev=j=0; // reset j for _numOffsets
+    if( _interactionVecs!=null ) {
+      while( i < cols.length && cols[i] < _numOffsets[intLvls.length]) {
+        int[] lvls = MemoryManager.malloc4(_numOffsets[j+1] - _numOffsets[j]);
+        int k=0; // same as above
+        while(i<cols.length && cols[i] < _numOffsets[j+1])
+          lvls[k++] = (cols[i++] - _numOffsets[j]); // no useAllFactorLevels offset since it's tucked away in the count already
+        if( k>0 )
+          intLvls[j] = Arrays.copyOf(lvls,k);
+        ++j;
       }
-      if (checkInteraction) {
-        j=0;  // index into _numOffsets directly, always start from 0 as numeric interaction columns always come first
-        while (i < cols.length && cols[i] < _numOffsets[intLvls.length]) {
-          int[] lvls = MemoryManager.malloc4(_numOffsets[j + 1] - _numOffsets[j]);
-          int k = 0; // same as above
-          while (i < cols.length && cols[i] < _numOffsets[j + 1])
-            lvls[k++] = (cols[i++] - _numOffsets[j]); // no useAllFactorLevels offset since it's tucked away in the count already
-          if (k > 0)
-            intLvls[j] = Arrays.copyOf(lvls, k);
-          ++j;
-        }
-        int preIgnoredCnt = ignoredCnt;
-        for (int k = 0; k < intLvls.length; ++k)
-          if (null == intLvls[k]) {
-            ignoredCols[ignoredCnt++] = k + _cats;
-          }
-        if (ignoredCnt > preIgnoredCnt) {  // got more ignored, trim out the nulls
-          int[][] is = new int[_interactionVecs.length - (ignoredCnt - preIgnoredCnt)][];
-          int y = 0;
-          for (int[] intLvl : intLvls)
-            if (intLvl != null)
-              is[y++] = intLvl;
-          intLvls = is;
-        }
+      int preIgnoredCnt=ignoredCnt;
+      for(int k=0;k<intLvls.length;++k)
+        if( null==intLvls[k] ) { ignoredCols[ignoredCnt++] = k+_cats; }
+      if( ignoredCnt > preIgnoredCnt ) {  // got more ignored, trim out the nulls
+        int[][] is = new int[_interactionVecs.length - (ignoredCnt-preIgnoredCnt)][];
+        int y=0;
+        for (int[] intLvl : intLvls)
+          if (intLvl != null)
+            is[y++] = intLvl;
+        intLvls=is;
       }
     }
-    
-    if (!checkInteraction)
-      prev=j=0;
 
-    // now dealing with numerics: excluding interaction columns
+    // now numerics
+    prev=j=_interactionVecs==null?0:_interactionVecs.length;
     for(;i<cols.length;++i){
       int numsToIgnore = (cols[i]-_numOffsets[j]);
       for(int k=0;k<numsToIgnore;++k){
@@ -579,8 +560,6 @@ public class DataInfo extends Keyed<DataInfo> {
         ++j;
       }
       prev = ++j;
-      if (j >= _numOffsets.length)
-        break;
     }
     for(int k = prev; k < _nums; ++k)
       ignoredCols[ignoredCnt++] = k+_cats;
