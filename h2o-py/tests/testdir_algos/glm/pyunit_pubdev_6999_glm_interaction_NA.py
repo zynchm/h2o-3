@@ -48,26 +48,8 @@ def interactions_GLM_Binomial():
     model = H2OGeneralizedLinearEstimator(family = "Binomial", alpha=0, lambda_search=False,
                                           interaction_pairs=interaction_pairs, standardize=False)
     model.train(x=xcols, y='label', training_frame=h2o_df)
-    modelNA.train(x=xcols, y='label', training_frame=h2o_df_NA)
     assert_arrays_equal_NA(modelNA._model_json['output']['coefficients_table'].cell_values,
                            model._model_json['output']['coefficients_table'].cell_values)
-
-    interaction_pairs = [("numerical_feat", "categorical_feat2"),("numerical_feat", "numerical_feat2"),
-                         ("categorical_feat", "categorical_feat2")] 
-    xcols = ['numerical_feat','numerical_feat2','categorical_feat','categorical_feat2']
-
-    # build model with and without NA in Frame
-    modelNA = H2OGeneralizedLinearEstimator(family = "Binomial", alpha=0, lambda_search=False,
-                                        interaction_pairs=interaction_pairs, standardize=False)
-    modelNA.train(x=xcols, y='label', training_frame=h2o_df_NA)
-    # build model with and without NA in Frame
-    model = H2OGeneralizedLinearEstimator(family = "Binomial", alpha=0, lambda_search=False,
-                                      interaction_pairs=interaction_pairs, standardize=False)
-    model.train(x=xcols, y='label', training_frame=h2o_df)
-    modelNA.train(x=xcols, y='label', training_frame=h2o_df_NA)
-    assert_arrays_equal_NA(modelNA._model_json['output']['coefficients_table'].cell_values,
-                       model._model_json['output']['coefficients_table'].cell_values)
-
 
     # test interaction of enum and num columns
     print("******* Test interaction with enum by num")
