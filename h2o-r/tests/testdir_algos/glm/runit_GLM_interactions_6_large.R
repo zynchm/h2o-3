@@ -1,7 +1,7 @@
 setwd(normalizePath(dirname(R.utils::commandArgs(asValues=TRUE)$"f")))
 source("../../../scripts/h2o-r-test-setup.R")
 
-test.glm.interactions5 <- function() {
+test.glm.interactions6 <- function() {
 
   df <- h2o.importFile(locate("smalldata/airlines/allyears2k_headers.zip"))
   XY <- names(df)[c(1,2,3,4,6,8,9,13,17,18,19,31)]
@@ -18,4 +18,4 @@ test.glm.interactions5 <- function() {
 
 }
 
-doTest("Testing model accessors for GLM", test.glm.interactions5)
+doTest("Testing interactions for GLM", test.glm.interactions6)

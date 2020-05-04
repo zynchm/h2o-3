@@ -480,7 +480,7 @@ public class DataInfo extends Keyed<DataInfo> {
    * Filter the _adaptedFrame so that it contains only the Vecs referenced by the cols
    * parameter.  This is done by recording the ignored columns in array ignoredCols.  The enum columns are 
    * not expanded and considered as one column.  However, it is possible that a level inside the enum column
-   * can be ignored.  In this case, the enum levels are adjusted accordingly.
+   * can be ignored as indicated in array cols.  In this case, the enum levels are adjusted accordingly later.
    *
    * @param cols Array of the expanded column indices to keep.
    * @return A DataInfo with _activeCols specifying the active columns
@@ -491,7 +491,7 @@ public class DataInfo extends Keyed<DataInfo> {
     assert  _response_transform != null;
     if(cols == null)return IcedUtils.deepCopy(this);  // keep all columns
     int hasIcpt = (cols.length > 0 && cols[cols.length-1] == fullN())?1:0;
-    int i = 0, j = 0, ignoredCnt = 0;
+    int i = 0, j = 0, ignoredCnt = 0; // i index into cols
     //public DataInfo(Frame fr, int hasResponses, boolean useAllFactorLvls, double [] normSub, double [] normMul, double [] normRespSub, double [] normRespMul){
     int [][] catLvls = new int[_cats][];  // categorical levels to keep (used in getCategoricalOffsetId binary search)
     int [][] intLvls = new int[_interactionVecs==null?0:_interactionVecs.length][]; // interactions levels to keep (used in getInteractionOffsetId binary search)
@@ -529,20 +529,20 @@ public class DataInfo extends Keyed<DataInfo> {
     // if we have enum and num interaction or num and num interaction.  These have the exact same filtering logic
     // as the categoricals above
     int prev=j=0; // reset j to index into numerical columns both from interactions and from predictors
-    boolean checkInteraction = false;
+  //  boolean checkInteraction = false;
     if( _interactionVecs!=null) {
-      for (j = 0; j < _interactionVecs.length; j++) { // only count interaction for enum by num, num by num
+/*      for (j = 0; j < _interactionVecs.length; j++) { // only count interaction for enum by num, num by num
         if (_interactionVecs[j] >= _cats) {
           checkInteraction = true;          // true if enum by num or num by num interactions are found
           prev = _interactionVecs.length-j; // prev index into non interaction numeric columns only
           break;
         }
-      }
-      if (checkInteraction) {
-        j=0;  // index into _numOffsets directly, always start from 0 as numeric interaction columns always come first
+      }*/
+//      if (checkInteraction) {
+  //      j=0;  // index into _numOffsets directly
         while (i < cols.length && cols[i] < _numOffsets[intLvls.length]) {
           int[] lvls = MemoryManager.malloc4(_numOffsets[j + 1] - _numOffsets[j]);
-          int k = 0; // same as above
+          int k = 0; // index into lvls
           while (i < cols.length && cols[i] < _numOffsets[j + 1])
             lvls[k++] = (cols[i++] - _numOffsets[j]); // no useAllFactorLevels offset since it's tucked away in the count already
           if (k > 0)
@@ -556,19 +556,18 @@ public class DataInfo extends Keyed<DataInfo> {
           }
         if (ignoredCnt > preIgnoredCnt) {  // got more ignored, trim out the nulls
           int[][] is = new int[_interactionVecs.length - (ignoredCnt - preIgnoredCnt)][];
-          int y = 0;
+          int y = 0; // index into is
           for (int[] intLvl : intLvls)
             if (intLvl != null)
               is[y++] = intLvl;
           intLvls = is;
         }
       }
-    }
+//    }
     
-    if (!checkInteraction)
-      prev=j=0;
+    prev=j=_interactionVecs==null?0:_interactionVecs.length;
 
-    // now dealing with numerics: excluding interaction columns
+    // now dealing with onnumerics: excluding interaction columns
     for(;i<cols.length;++i){
       int numsToIgnore = (cols[i]-_numOffsets[j]);
       for(int k=0;k<numsToIgnore;++k){
