@@ -373,7 +373,15 @@ class BinaryMerge extends DTask<BinaryMerge> {
    *                  
    */
   private void binaryMergeOneMSB(long leftLowIn, long leftUppIn, long riteLowIn, long riteUppIn) {
+    if (riteUppIn > 0) { // shrink down the rite frame search bound if possible
+      riteUppIn = reduceUpperRange(leftUppIn, riteUppIn, true);
+    }
     if (!_allLeft && riteUppIn == 0) return;  // no merging possible with empty rite frame here
+
+    if (!_allLeft) {  // shrink down the left frame search bound if possible
+      leftUppIn = reduceUpperRange(riteUppIn, leftUppIn, false);
+    }
+    
     final boolean leftFrameIterate = _allLeft ? true : ((leftUppIn - leftLowIn) > (riteUppIn - riteLowIn) ? false : true);
     long iterIndex = leftFrameIterate ? leftLowIn + 1 : riteLowIn + 1;
     final long iterUppIn = leftFrameIterate ? leftUppIn : riteUppIn;
@@ -419,6 +427,20 @@ class BinaryMerge extends DTask<BinaryMerge> {
       populateRet1StRetLen((int) (iterHigh - iterIndex), binarySearchLen, iterIndex, binarySearchInfo._matchIndex, leftFrameIterate);
       iterIndex = iterHigh; // next row index to iterate over
     }
+  }
+  
+  private long reduceUpperRange(long iterUppIn, long bsUppIn, boolean leftFrameIter) {
+    long ind = bsUppIn - 1; // leftUppIn, riteUppIn denotes number of keys for comparison
+    long iterMax = iterUppIn-1;
+    for (; ind >= 0; ind--) {
+      int keyCmpRe = leftFrameIter ? 
+              keycmp(_leftKO._key, iterMax, _leftKO, _leftSB, _riteKO._key, ind, _riteKO, _riteSB) :
+              keycmp(_riteKO._key, iterMax, _riteKO, _riteSB, _leftKO._key, ind, _leftKO, _leftSB);
+      if (keyCmpRe >= 0) { // element exceeds list element
+        break;
+      }
+    }
+    return (ind+1);
   }
   
   private class MidSearchInfo {
