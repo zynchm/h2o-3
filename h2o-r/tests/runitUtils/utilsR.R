@@ -943,8 +943,8 @@ compareFrames <- function(frame1, frame2, prob=0.5, tolerance=1e-6) {
       temp1=as.numeric(frame1[,colInd])
       temp2=as.numeric(frame2[,colInd])
     }
-    for (rowInd in range(1,nrow(frame1))) {
-      if (runif(1,0,1) < prob)
+    for (rowInd in c(1:nrow(frame1))) {
+      if (runif(1,0,1) <= prob)
         if (is.na(temp1[rowInd, 1])) {
           expect_true(is.na(temp2[rowInd, 1]), info=paste0("Errow at row ", rowInd, ". Frame is value is na but Frame 2 value is ", temp2[rowInd,1]))
         } else {
