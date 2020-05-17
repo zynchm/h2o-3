@@ -133,11 +133,11 @@ test <- function() {
 }
 
 assertMergeCorrect <- function(mergedFrame, resultF) {
-    print("Merged Frame")
-    print(mergedFrame)
-    print("Expected Frame")
-    print(resultF)
     colnames(mergedFrame) <- colnames(resultF)
+    print("Merged Frame")
+    print(mergedFrame,n=nrow(mergedFrame))
+    print("Expected Frame")
+    print(resultF,n=nrow(resultF))
     compareFrames(mergedFrame, resultF, prob=1)
 }
 
