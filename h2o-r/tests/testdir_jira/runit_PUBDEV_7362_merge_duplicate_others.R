@@ -20,7 +20,7 @@ test <- function() {
     print(merged2)
     resultF <- as.h2o(data.frame(fruit=c(258,517,518,1028,1028,1030,1030,2049),
                                  color=c(NA,NA,NA,NA,NA,NA,NA,NA),
-                                 citrus=c(TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,TRUE,TRUE)))
+                                 citrus=c(TRUE,FALSE,TRUE,TRUE,FALSE,FALSE,TRUE,TRUE)))
     assertMergeCorrect(h2o.arrange(merged2, "fruit"), h2o.arrange(resultF,"fruit"))
     
     merged <- h2o.merge(left_hf, right_hf, all.x = TRUE)
