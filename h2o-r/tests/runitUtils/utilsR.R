@@ -938,7 +938,7 @@ compareFrames <- function(frame1, frame2, prob=0.5, tolerance=1e-6) {
     notNumericCols = !(h2o.isnumeric(frame1[,colInd]) && h2o.isnumeric(frame2[,colInd]))
     if (notNumericCols) {
       temp1 = frame1[,colInd]
-      temp2 = frame1[,colInd]
+      temp2 = frame2[,colInd]
     } else { 
       temp1=as.numeric(frame1[,colInd])
       temp2=as.numeric(frame2[,colInd])
