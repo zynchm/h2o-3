@@ -94,8 +94,8 @@ public class Merge {
 
     // map missing levels to -1 (rather than increasing slots after the end)
     // for now to save a deep branch later
-    for (int i=0; i<id_maps.length; i++) {
-      if (id_maps[i] == null) continue;
+    for (int i=0; i<id_maps.length; i++) { // id_maps is for leftFrame.  
+      if (id_maps[i] == null) continue;    // id_maps -1 represent leftFrame levels not found in riteFrame
       assert id_maps[i].length >= leftFrame.vec(leftCols[i]).max()+1
               :"Left frame cardinality is higher than right frame!  Switch frames and change merge directions to get " +
               "around this restriction.";
