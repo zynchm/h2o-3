@@ -933,7 +933,7 @@ random_NN <- function(actFunc, max_layers, max_node_number) {
 #----------------------------------------------------------------------
 compareFrames <- function(frame1, frame2, prob=0.5, tolerance=1e-6) {
   expect_true(nrow(frame1) == nrow(frame2) && ncol(frame1) == ncol(frame2), info="frame1 and frame2 are different in size.")
-  for (colInd in range(1, ncol(frame1))) {
+  for (colInd in c(1:ncol(frame1))) {
 
     notNumericCols = !(h2o.isnumeric(frame1[,colInd]) && h2o.isnumeric(frame2[,colInd]))
     if (notNumericCols) {
