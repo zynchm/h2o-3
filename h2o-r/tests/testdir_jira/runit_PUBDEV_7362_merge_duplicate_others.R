@@ -3,6 +3,13 @@ source("../../scripts/h2o-r-test-setup.R")
 
 # problem with merge.
 test <- function() {
+    # code from Kuba
+    left <- as.h2o(data.frame(topic=c("A","B","C","D"), value=c(12,13,14,15))) # [A, 12][B, 13][C, 14][D, 15]
+    right <- as.h2o(data.frame(topic=c("Y","B","X","D"), bigValue=c(10000, 20000, 30000, 40000))) #[Y, 10000][B, 20000][X, 30000][D, 40000]
+    merged <- h2o.merge(left, right, all.y = TRUE, method="radix")
+    resultF <- as.h2o(data.frame(topic=c("B","D","X","Y"), value = c(13, 15, NA, NA), bigvalue=c(20000, 40000, 30000, 10000)))
+    assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
+    
     # customer code
     left_hf <- as.h2o(data.frame(fruit = c(-177000000, -4000000, 100000000000, 200000000000, 1000000000000),
                                  color <- c('red', 'orange', 'yellow', 'red', 'blue')))
@@ -73,13 +80,6 @@ test <- function() {
                                 color=c('yellow','red','orange','red', 'blue', 'purple', 'cyan'),
                                 citrus=c(NA,NA,NA,NA,NA,NA,NA)))
     assertMergeCorrect(h2o.arrange(merged,"fruit"), h2o.arrange(resultF,"fruit"))
-    
-    # code from Kuba
-    left <- as.h2o(data.frame(topic=c("A","B","C","D"), value=c(12,13,14,15))) # [A, 12][B, 13][C, 14][D, 15]
-    right <- as.h2o(data.frame(topic=c("Y","B","X","D"), bigValue=c(10000, 20000, 30000, 40000))) #[Y, 10000][B, 20000][X, 30000][D, 40000]
-    merged <- h2o.merge(left, right, all.y = TRUE, method="radix")
-    resultF <- as.h2o(data.frame(topic=c("B","D","X","Y"), value = c(13, 15, NA, NA), bigvalue=c(20000, 40000, 30000, 10000)))
-    assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
 
    
     # example from Neema
