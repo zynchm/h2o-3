@@ -6,8 +6,21 @@ test <- function() {
     # code from Kuba
     left <- as.h2o(data.frame(topic=c("A","B","C","D"), value=c(12,13,14,15))) # [A, 12][B, 13][C, 14][D, 15]
     right <- as.h2o(data.frame(topic=c("Y","B","X","D"), bigValue=c(10000, 20000, 30000, 40000))) #[Y, 10000][B, 20000][X, 30000][D, 40000]
+
+    merged <- h2o.merge(right, left, all.x = TRUE, method="radix")
+    resultF <- as.h2o(data.frame(topic=c("B","D","X","Y"), bigvalue=c(20000, 40000, 30000, 10000), value = c(13, 15, NA, NA)))
+    assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
+    
     merged <- h2o.merge(left, right, all.y = TRUE, method="radix")
     resultF <- as.h2o(data.frame(topic=c("B","D","X","Y"), value = c(13, 15, NA, NA), bigvalue=c(20000, 40000, 30000, 10000)))
+    assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
+ 
+    merged <- h2o.merge(left, right, all.x = FALSE, all.y = FALSE, method="radix")
+    resultF <- as.h2o(data.frame(topic=c("B","D"), value = c(13, 15), bigvalue=c(20000, 40000)))
+    assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
+    
+    merged <- h2o.merge(right, left, all.x = FALSE, all.y = FALSE, method="radix")
+    resultF <- as.h2o(data.frame(topic=c("B","D"), bigvalue=c(20000, 40000), value = c(13, 15)))
     assertMergeCorrect(h2o.arrange(merged,"topic"), h2o.arrange(resultF,"topic"))
     
     # customer code
