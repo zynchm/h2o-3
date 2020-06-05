@@ -176,10 +176,10 @@ public final class L_BFGS extends Iced {
    * function evaluated at the found optmimum.
    */
 //  public final Result solve(GradientSolver gslvr, double [] beta, GradientInfo ginfo, ProgressMonitor pm) {return solve(gslvr,beta,beta.clone(),ginfo,pm);}
-  public final Result solve(GradientSolver gslvr, double [] beta, GradientInfo ginfo, ProgressMonitor pm) {
+  public final Result solve(GradientSolver gslvr, double [] beta, GradientInfo ginfo, ProgressMonitor pm, int iteration) {
     if(_hist == null)
       _hist = new History(_historySz, beta.length);
-    int iter = 0;
+    int iter = iteration;
     double rel_improvement = 1;
     final double [] pk = new double[beta.length];
     double minStep = 1e-16;
@@ -198,6 +198,11 @@ public final class L_BFGS extends Iced {
     }
     return new Result((ArrayUtils.linfnorm(ginfo._gradient,false) <= _gradEps  || rel_improvement <= _objEps),iter,lineSearch.getX(), lineSearch.ginfo(),rel_improvement);
   }
+
+  public final Result solve(GradientSolver gslvr, double [] beta, GradientInfo ginfo, ProgressMonitor pm) {
+    return solve(gslvr, beta, ginfo, pm, 0);
+  }
+  
 
   /**
    * Solve the optimization problem defined by the user-supplied ginfo function using L-BFGS algorithm.

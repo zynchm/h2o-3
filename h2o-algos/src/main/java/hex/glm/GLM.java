@@ -20,6 +20,7 @@ import hex.optimization.OptimizationUtils.*;
 import hex.svd.SVD;
 import hex.svd.SVDModel;
 import hex.svd.SVDModel.SVDParameters;
+import hex.util.CheckpointUtils;
 import hex.util.LinearAlgebraUtils;
 import hex.util.LinearAlgebraUtils.BMulTask;
 import hex.util.LinearAlgebraUtils.FindMaxIndex;
@@ -41,6 +42,7 @@ import java.text.NumberFormat;
 import java.util.*;
 
 import static hex.ModelMetrics.calcVarImp;
+import static hex.genmodel.utils.ArrayUtils.flat;
 import static hex.glm.GLMUtils.*;
 
 /**
@@ -62,6 +64,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
   public int[][] _gamColIndices = null; // corresponding column indices in dataInfo
   public static int _totalBetaLen;
   private boolean _earlyStopEnabled = false;
+  List<Integer> _scoreIterationList = new ArrayList<Integer>(); // keep track of iteration where scoring occurs
 
   public GLM(boolean startup_once){super(new GLMParameters(),startup_once);}
   public GLM(GLMModel.GLMParameters parms) {
@@ -533,7 +536,6 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
       _lsc = new LambdaSearchScoringHistory(_parms._valid != null,_parms._nfolds > 1);
       _sc = new ScoringHistory();
       _train.bulkRollups(); // make sure we have all the rollups computed in parallel
-      _sc = new ScoringHistory();
       _t0 = System.currentTimeMillis();
       if ((_parms._lambda_search || !_parms._intercept || _parms._lambda == null || _parms._lambda[0] > 0) && !_parms._HGLM)
         _parms._use_all_factor_levels = true;
@@ -698,9 +700,56 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
         _parms._gradient_epsilon = _parms._lambda[0] == 0 ? 1e-6 : 1e-4;
         if(_parms._lambda_search) _parms._gradient_epsilon *= 1e-2;
       }
+
+      if (_parms.hasCheckpoint()) {
+        if (!_parms._solver.equals(Solver.IRLSM))
+          error("_checkpoint", "GLM checkpoint is supported only for IRLSM.  Please specify it " +
+                  "explicitly.  Do not use AUTO or default");
+        Value cv = DKV.get(_parms._checkpoint);
+        CheckpointUtils.getAndValidateCheckpointModel(this, GLMModel.GLMParameters.CHECKPOINT_NON_MODIFIABLE_FIELDS, cv);
+
+        // setting more parameters if needed
+      }
       buildModel();
     }
   }
+
+  // copy over parameters from _model to _state
+  private void copyCheckModel2StateP1() {
+    if (_model._output._submodels.length > 1) { // lambda search or multiple alpha/lambda cases
+      ;
+    } else {  // no lambda search or multiple alpha/lambda case
+      _state.setIter(_model._output._submodels[0].iteration);
+      _state.setLambda(_model._output._submodels[0].lambda_value);
+      _state.setAlpha(_model._output._submodels[0].alpha_value);
+      if (_parms._family.equals(Family.multinomial) || _parms._family.equals(Family.ordinal)) {
+        double[] beta_multinomial = flat(_model._output.getNormBetaMultinomial());
+        GLMGradientInfo ginfo = new GLMGradientSolver(_job, _parms, _dinfo, 0, _state.activeBC(),
+                _penaltyMatrix, _gamColIndices).getGradient(beta_multinomial);  // gradient obtained with zero penalty
+        _state.updateState(beta_multinomial, ginfo);
+      } else {
+        GLMGradientInfo ginfo = new GLMGradientSolver(_job, _parms, _dinfo, 0, _state.activeBC(),
+                _penaltyMatrix, _gamColIndices).getGradient(_model._output._global_beta);  // gradient obtained with zero penalty
+
+        _state.updateState(_model._output._global_beta, ginfo);
+      }
+    }
+    _model._output._submodels = null; // null out submodels
+  }
+  
+/*  private void copyCheckModel2StateP2() {
+    if (_parms._family == Family.multinomial || _parms._family == Family.ordinal) {
+      ;
+    } else {
+      _state.setBeta(_model._output._global_beta);  // reset the beta
+
+      GLMGradientInfo ginfo = new GLMGradientSolver(_job, _parms, _dinfo, 0, _state.activeBC(),
+              _penaltyMatrix, _gamColIndices).getGradient(_model._output._global_beta);  // gradient obtained with zero penalty
+      _state.updateState(_model._output._global_beta, ginfo);
+    }
+    _model._output._submodels = null; // null out submodels
+  }*/
+  
 
   /**
    * initialize the following parameters for HGLM from either user initial inputs or from a GLM model if user did not 
@@ -849,11 +898,60 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
     GLMModel model = new GLM(tempParams).trainModel().get();
     return model;
   }
+  
+  // copy from scoring_history back to _sc or _lsc
+  private void reinstallSC() {
+    if (_parms._lambda_search) {
+      ;
+    } else {
+      TwoDimTable scoringHistory = _model._output._scoring_history;
+      String[] colHeaders2Restore = new String[]{"iterations", "timestamp", "negative_log_likelihood", "objective", 
+              "convergence", "sumEtaiSquare"};
+      int num2Copy = _parms._HGLM ? colHeaders2Restore.length : colHeaders2Restore.length-2;
+      int[] colHeadersIndex = grabHeaderIndex(scoringHistory, num2Copy, colHeaders2Restore);
+      restoreSC(scoringHistory, colHeadersIndex);
+    }
+  }
+
+  private void restoreSC(TwoDimTable sHist, int[] colIndices) {
+    DateTimeFormatter fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+    int numRows = sHist.getRowDim();
+    for (int rowInd = 0; rowInd < numRows; rowInd++) {
+      _sc._scoringIters.add((Integer) sHist.get(rowInd, colIndices[0]));
+      _scoreIterationList.add((Integer) sHist.get(rowInd, colIndices[0]));
+      _sc._scoringTimes.add(fmt.parseMillis((String) sHist.get(rowInd, colIndices[1])));
+      _sc._likelihoods.add((Double) sHist.get(rowInd, colIndices[2]));
+      _sc._objectives.add((Double) sHist.get(rowInd, colIndices[3]));
+      if (_parms._HGLM) {  // for HGLM family
+        _sc._convergence.add((Double) sHist.get(rowInd, colIndices[4]));
+        _sc._sumEtaiSquare.add((Double) sHist.get(rowInd, colIndices[5]));
+      }
+    }
+  }
+  
+  private int[] grabHeaderIndex(TwoDimTable sHist, int numHeaders, String[] colHeadersUseful) {
+    int[] colHeadersIndex = new int[numHeaders];
+    String[] colHeaders = sHist.getColHeaders();
+    for (int colInd = 0; colInd < numHeaders; colInd++) {
+      colHeadersIndex[colInd] = Arrays.asList(colHeaders).indexOf(colHeadersUseful[colInd]);
+    }
+    return colHeadersIndex;
+  }
 
   // FIXME: contrary to other models, GLM output duration includes computation of CV models:
   //  ideally the model should be instantiated in the #computeImpl() method instead of init
   private void buildModel() {
-    _model = new GLMModel(_result, _parms, this, _state._ymu, _dinfo._adaptedFrame.lastVec().sigma(), _lmax, _nobs);
+    if (_parms.hasCheckpoint()) {
+      GLMModel model = ((GLMModel)DKV.getGet(_parms._checkpoint)).deepClone(_result);
+      // Override original parameters by new parameters
+      model._parms = _parms;
+      // We create a new model
+      _model = model;
+//      copyCheckModel2StateP1();
+      reinstallSC();  // copy over scoring history and related data structure
+    } else {
+      _model = new GLMModel(_result, _parms, this, _state._ymu, _dinfo._adaptedFrame.lastVec().sigma(), _lmax, _nobs);
+    }
     _model._output.setLambdas(_parms);  // set lambda_min and lambda_max if lambda_search is enabled
     
     // clone2 so that I don't change instance which is in the DKV directly
@@ -893,8 +991,6 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
   public final class GLMDriver extends Driver implements ProgressMonitor {
     private long _workPerIteration;
     private transient double[][] _vcov;
-    List<Integer> _scoreIterationList = new ArrayList<Integer>(); // keep track of iteration where scoring occurs
-
 
     private void doCleanup() {
       try {
@@ -1436,10 +1532,10 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
 
     private void fitIRLSM(Solver s) {
       GLMWeightsFun glmw = new GLMWeightsFun(_parms);
-      double [] betaCnd = _state.beta();
+      double [] betaCnd = _parms.hasCheckpoint()?_model._betaCndTemp:_state.beta();
       LineSearchSolver ls = null;
-      boolean firstIter = true;
-      int iterCnt = 0;
+      int iterCnt = _parms.hasCheckpoint()?_state._iter:0;
+      boolean firstIter = iterCnt == 0?true:false;
       try {
         while (true) {
           iterCnt++;
@@ -1451,6 +1547,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
           } else {
             if (!firstIter && !_state._lsNeeded && !progress(gram.beta, gram.likelihood)) {
               System.out.println("DONE after " + (iterCnt-1) + " iterations (1)");
+              _model._betaCndTemp = betaCnd;
               return;
             }
             betaCnd = s == Solver.COORDINATE_DESCENT?COD_solve(gram,_state._alpha,_state.lambda())
@@ -1561,7 +1658,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
               Log.info(LogMsg("LBFGS, gradient norm = " + ArrayUtils.linfnorm(ginfo._gradient, false)));
             return GLMDriver.this.progress(beta,ginfo);
           }
-        });
+        }, _state._iter);
         Log.info(LogMsg(r.toString()));
         _state.updateState(r.coefs,(GLMGradientInfo)r.ginfo);
       }
@@ -2092,8 +2189,11 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
          if (_parms._HGLM) // add random coefficients for random effects/columns
           sm.ubeta = Arrays.copyOf(_state.ubeta(), _state.ubeta().length);
         _model.addSubmodel(sm);
-        if (!_parms._HGLM) // only perform this when HGLM is not used.
-          _state.setLambda(lambda);
+        if (!_parms._HGLM) {  // only perform this when HGLM is not used.
+          if (!(_parms.hasCheckpoint() && _parms._family.equals(Family.multinomial)))
+            _state.setLambda(lambda);
+        }
+        
         checkMemoryFootPrint(_state.activeData());
         do {
           if (_parms._family == Family.multinomial || _parms._family == Family.ordinal)
@@ -2179,6 +2279,9 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
           _dinfo.addResponse(new String[]{"__glm_sumExp", "__glm_maxRow"}, vecs);
       }
       
+      if (_parms.hasCheckpoint()) // restore _state parameters
+        copyCheckModel2StateP1();
+      
       if (_parms._HGLM) { // add w, augZ, etaOld and random columns to response for easy access inside _dinfo
         addWdataZiEtaOld2Response();
       }
@@ -2205,7 +2308,7 @@ public class GLM extends ModelBuilder<GLMModel,GLMParameters,GLMOutput> {
           if (_job.stop_requested() || (timeout() && _model._output._submodels.length > 0))
             break;  //need at least one submodel on timeout to avoid issues.
           if (_parms._max_iterations != -1 && _state._iter >= _parms._max_iterations) 
-            break;// iterations accumulate across all lambda/alpha values
+            break;  // iterations accumulate across all lambda/alpha values when coldstart = false
           if ((!_parms._HGLM && (_parms._cold_start || (!_parms._lambda_search && _parms._cold_start))) && (i > 0)) // default: cold_start for non lambda_search
             coldStart(devHistoryTrain, devHistoryTest);
           Submodel sm = computeSubmodel(submodelCount, _parms._lambda[i], nullDevTrain, nullDevValid);
