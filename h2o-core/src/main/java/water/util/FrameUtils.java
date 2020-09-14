@@ -4,6 +4,7 @@ import hex.Interaction;
 import hex.Model;
 import hex.ToEigenVec;
 import jsr166y.CountedCompleter;
+import org.apache.commons.io.IOUtils;
 import water.*;
 import water.fvec.*;
 import water.parser.ParseDataset;
@@ -16,6 +17,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FrameUtils {
 
@@ -333,10 +337,12 @@ public class FrameUtils {
     final boolean _overwrite;
     final Job _j;
     int _nParts;
+    boolean _parallel;
     final CompressionFactory _compressor;
     final Frame.CSVStreamParams _csv_parms;
 
-    public ExportTaskDriver(Frame frame, String path, String frameName, boolean overwrite, Job j, int nParts,
+    public ExportTaskDriver(Frame frame, String path, String frameName, boolean overwrite, Job j, 
+                            int nParts, boolean perChunk,
                             CompressionFactory compressor, Frame.CSVStreamParams csvParms) {
       _frame = frame;
       _path = path;
@@ -344,6 +350,7 @@ public class FrameUtils {
       _overwrite = overwrite;
       _j = j;
       _nParts = nParts;
+      _parallel = perChunk;
       _compressor = compressor;
       _csv_parms = csvParms;
     }
@@ -351,7 +358,39 @@ public class FrameUtils {
     @Override
     public void compute2() {
       _frame.read_lock(_j._key);
-      if (_nParts == 1) {
+      if (_parallel && _nParts == 1) {
+        _nParts = _frame.anyVec().nChunks();
+        int processed = 0;
+        CompressionFactory compressor = CompressionFactory.make("snappy");
+        DecompressionFactory decompressor = DecompressionFactory.make("snappy");
+        ChunkExportTask chunkExportTask = new ChunkExportTask(_frame, _frame._names, _csv_parms, compressor);
+        H2O.submitTask(new LocalMR(chunkExportTask, H2O.NUMCPUS));
+        try (FileOutputStream os = new FileOutputStream(_path)) {
+          boolean[] isChunkCompleted = new boolean[_nParts + 1];
+          while (processed != _nParts) {
+            int cid = chunkExportTask.completed.take();
+            isChunkCompleted[cid] = true;
+            while (isChunkCompleted[processed]) {
+              File chunkFile = new File(chunkExportTask.getChunkPath(processed));
+              try (InputStream is = decompressor.wrapInputStream(new FileInputStream(chunkFile))) {
+                IOUtils.copyLarge(is, os);
+              } finally {
+                if (! chunkFile.delete()) {
+                  Log.warn("Temporary file " + chunkFile.getAbsoluteFile() + " couldn't be deleted.");
+                }
+              }
+              processed++;
+              _j.update(1);
+            }
+          }
+        } catch (IOException e) {
+          throw new RuntimeException("File export failed", e);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new RuntimeException("File export failed", e);
+        }
+        tryComplete();
+      } else if (_nParts == 1) {
         // Single file export, the file should be created by the node that was asked to export the data
         // (this is for non-distributed filesystems, we want the file to go to the local filesystem of the node)
         Frame.CSVStream is = new Frame.CSVStream(_frame, _csv_parms);
@@ -453,12 +492,16 @@ public class FrameUtils {
     }
 
     private void exportCSVStream(Frame.CSVStream is, String path, int firstChkIdx) {
+      exportCSVStream(is, path, firstChkIdx, _compressor);
+    }
+
+    private void exportCSVStream(Frame.CSVStream is, String path, int firstChkIdx, CompressionFactory compressor) {
       OutputStream os = null;
       long written = -1;
       try {
         os = H2O.getPM().create(path, _overwrite);
-        if (_compressor != null) {
-          os = _compressor.wrapOutputStream(os);
+        if (compressor != null) {
+          os = compressor.wrapOutputStream(os);
         }
         written = copyCSVStream(is, new BufferedOutputStream(os), firstChkIdx, BUFFER_SIZE);
       } catch (IOException e) {
@@ -505,6 +548,43 @@ public class FrameUtils {
       protected void setupLocal() {
         boolean created = H2O.getPM().mkdirs(_path);
         if (! created) Log.warn("Path ", _path, " was not created.");
+      }
+    }
+
+    class ChunkExportTask extends MrFun<ChunkExportTask> {
+      private transient AtomicInteger chunkIndex = new AtomicInteger(-1);
+      private transient BlockingQueue<Integer> completed = new LinkedBlockingQueue<>();
+
+      final Frame _fr;
+      final String[] _colNames;
+      final Frame.CSVStreamParams _csv_parms;
+      final CompressionFactory _compressor;
+
+      ChunkExportTask(Frame fr, String[] colNames, Frame.CSVStreamParams csvParms, CompressionFactory compressor) {
+        _fr = fr;
+        _colNames = colNames;
+        _csv_parms = csvParms;
+        _compressor = compressor;
+      }
+
+      @Override
+      protected void map(int id) {
+        int cid;
+        while ((cid = chunkIndex.incrementAndGet()) < _fr.anyVec().nChunks()) {
+          Chunk cs[] = new Chunk[_fr.numCols()];
+          for (int i = 0; i < cs.length; i++) {
+            Vec v = _fr.vec(i);
+            cs[i] = v.chunkForChunkIdx(cid);
+          }
+          String chunkPath = getChunkPath(cid);
+          Frame.CSVStream is = new Frame.CSVStream(cs, cid == 0 ? _colNames : null, 1, _csv_parms);
+          exportCSVStream(is, chunkPath, cid, _compressor);
+          completed.add(cid);
+        }
+      }
+
+      String getChunkPath(int cid) {
+        return _path + ".chunk-" + String.valueOf(100000 + cid).substring(1);
       }
     }
   }
