@@ -361,6 +361,8 @@ public class FrameUtils {
       if (_parallel && _nParts == 1) {
         _nParts = _frame.anyVec().nChunks();
         int processed = 0;
+        String compression = H2O.getSysProperty("export.csv.tmp.compression", "snappy");
+        Log.info("Using `" + compression + "` for interim CSV export files.");
         CompressionFactory compressor = CompressionFactory.make("snappy");
         DecompressionFactory decompressor = DecompressionFactory.make("snappy");
         ChunkExportTask chunkExportTask = new ChunkExportTask(_frame, _frame._names, _csv_parms, compressor);

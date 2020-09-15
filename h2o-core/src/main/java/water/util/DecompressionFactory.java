@@ -9,7 +9,7 @@ import java.util.zip.GZIPInputStream;
 
 public class DecompressionFactory extends Iced<DecompressionFactory> {
 
-  private String _name;
+  private final String _name;
 
   private DecompressionFactory(String name) {
     _name = name;
@@ -18,6 +18,8 @@ public class DecompressionFactory extends Iced<DecompressionFactory> {
   InputStream wrapInputStream(InputStream is) throws IOException {
     final String n = _name.toLowerCase();
     switch (n) {
+      case "none":
+        return is;
       case "gzip":
         return new GZIPInputStream(is);
       case "bzip2":
