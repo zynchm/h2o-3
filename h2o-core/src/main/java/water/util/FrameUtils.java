@@ -361,11 +361,13 @@ public class FrameUtils {
       if (_parallel && _nParts == 1) {
         _nParts = _frame.anyVec().nChunks();
         int processed = 0;
-        String compression = H2O.getSysProperty("export.csv.tmp.compression", "snappy");
+        String compression = H2O.getSysProperty("export.csv.cache.compression", "none");
         Log.info("Using `" + compression + "` for interim CSV export files.");
         CompressionFactory compressor = CompressionFactory.make(compression);
         DecompressionFactory decompressor = DecompressionFactory.make(compression);
-        ChunkExportTask chunkExportTask = new ChunkExportTask(_frame, _frame._names, _csv_parms, compressor);
+        String cacheStorage = H2O.getSysProperty("export.csv.cache.storage", "memory");
+        CsvChunkCache cache = "memory".equals(cacheStorage) ? new DkvCsvChunkCache() : new FileSystemCsvChunkCache();
+        ChunkExportTask chunkExportTask = cache.makeExportTask(_frame, _csv_parms, compressor);
         H2O.submitTask(new LocalMR(chunkExportTask, H2O.NUMCPUS));
         try (FileOutputStream os = new FileOutputStream(_path)) {
           boolean[] isChunkCompleted = new boolean[_nParts + 1];
@@ -373,13 +375,11 @@ public class FrameUtils {
             int cid = chunkExportTask.completed.take();
             isChunkCompleted[cid] = true;
             while (isChunkCompleted[processed]) {
-              File chunkFile = new File(chunkExportTask.getChunkPath(processed));
-              try (InputStream is = decompressor.wrapInputStream(new FileInputStream(chunkFile))) {
+              try (InputStream rawInputStream = cache.getChunkCsvStream(chunkExportTask, processed);
+                   InputStream is = decompressor.wrapInputStream(rawInputStream)) {
                 IOUtils.copyLarge(is, os);
               } finally {
-                if (! chunkFile.delete()) {
-                  Log.warn("Temporary file " + chunkFile.getAbsoluteFile() + " couldn't be deleted.");
-                }
+                cache.releaseCache(chunkExportTask, processed);
               }
               processed++;
               _j.update(1);
@@ -409,6 +409,59 @@ public class FrameUtils {
       }
     }
 
+    private interface CsvChunkCache {
+      ChunkExportTask makeExportTask(Frame f, Frame.CSVStreamParams csvParams, CompressionFactory compressor);
+      InputStream getChunkCsvStream(ChunkExportTask task, int cid) throws IOException;
+      void releaseCache(ChunkExportTask task, int cid);
+    } 
+    
+    private class FileSystemCsvChunkCache implements CsvChunkCache {
+      @Override
+      public ChunkExportTask makeExportTask(Frame f, Frame.CSVStreamParams csvParams, CompressionFactory compressor) {
+        return new ChunkExportTask(f, f._names, csvParams, compressor);
+      }
+
+      @Override
+      public InputStream getChunkCsvStream(ChunkExportTask task, int cid) throws IOException {
+        File chunkFile = new File(task.getChunkPath(cid));
+        return new FileInputStream(chunkFile);
+      }
+
+      @Override
+      public void releaseCache(ChunkExportTask task, int cid) {
+        File chunkFile = new File(task.getChunkPath(cid));
+        if (! chunkFile.delete()) {
+          Log.warn("Temporary file " + chunkFile.getAbsoluteFile() + " couldn't be deleted.");
+        }
+      }
+    }
+    
+    private class DkvCsvChunkCache implements CsvChunkCache {
+      Key _vecKey;
+
+      public DkvCsvChunkCache() {
+        _vecKey = Vec.newKey();
+      }
+
+      @Override
+      public ChunkExportTask makeExportTask(Frame f, Frame.CSVStreamParams csvParams, CompressionFactory compressor) {
+        return new InMemoryChunkExportTask(_vecKey, f, f._names, csvParams, compressor);
+      }
+
+      @Override
+      public InputStream getChunkCsvStream(ChunkExportTask task, int cid) throws IOException {
+        Key ck = Vec.chunkKey(_vecKey, cid);
+        byte[] bytes = ((C1NChunk) DKV.getGet(ck)).getBytes();
+        return new ByteArrayInputStream(bytes);
+      }
+
+      @Override
+      public void releaseCache(ChunkExportTask task, int cid) {
+        Key ck = Vec.chunkKey(_vecKey, cid);
+        DKV.remove(ck);
+      }
+    }
+    
     @Override
     public void onCompletion(CountedCompleter caller) {
       _frame.unlock(_j);
@@ -497,11 +550,31 @@ public class FrameUtils {
       exportCSVStream(is, path, firstChkIdx, _compressor);
     }
 
+    private static class ByteChunkOutputStream extends ByteArrayOutputStream {
+      private final Key _chunkKey;
+
+      public ByteChunkOutputStream(Key chunkKey) {
+        super();
+        _chunkKey = chunkKey;
+      }
+
+      @Override
+      public void close() throws IOException {
+        super.close();
+        byte[] myBytes = toByteArray();
+        DKV.put(_chunkKey, new Value(_chunkKey, new C1NChunk(myBytes)));
+      }
+    }
+
     private void exportCSVStream(Frame.CSVStream is, String path, int firstChkIdx, CompressionFactory compressor) {
       OutputStream os = null;
       long written = -1;
       try {
-        os = H2O.getPM().create(path, _overwrite);
+        if (path.startsWith("hex:")) {
+          Key k = Key.make(path.substring("hex:".length()));
+          os = new ByteChunkOutputStream(k);
+        } else
+          os = H2O.getPM().create(path, _overwrite);
         if (compressor != null) {
           os = compressor.wrapOutputStream(os);
         }
@@ -571,9 +644,10 @@ public class FrameUtils {
 
       @Override
       protected void map(int id) {
+        final int nChunks = _fr.anyVec().nChunks(); 
         int cid;
-        while ((cid = chunkIndex.incrementAndGet()) < _fr.anyVec().nChunks()) {
-          Chunk cs[] = new Chunk[_fr.numCols()];
+        while ((cid = chunkIndex.incrementAndGet()) < nChunks) {
+          Chunk[] cs = new Chunk[_fr.numCols()];
           for (int i = 0; i < cs.length; i++) {
             Vec v = _fr.vec(i);
             cs[i] = v.chunkForChunkIdx(cid);
@@ -587,6 +661,20 @@ public class FrameUtils {
 
       String getChunkPath(int cid) {
         return _path + ".chunk-" + String.valueOf(100000 + cid).substring(1);
+      }
+    }
+
+    class InMemoryChunkExportTask extends ExportTaskDriver.ChunkExportTask {
+      final Key _k;
+
+      InMemoryChunkExportTask(Key k, Frame fr, String[] colNames, Frame.CSVStreamParams csvParms, CompressionFactory compressor) {
+        super(fr, colNames, csvParms, compressor);
+        _k = k;
+      }
+
+      @Override
+      String getChunkPath(int cid) {
+        return "hex:" + Vec.chunkKey(_k, cid).toString();
       }
     }
   }
