@@ -13,12 +13,10 @@ import water.parser.ParseSetup;
 import java.io.*;
 import java.net.URI;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class FrameUtils {
@@ -360,7 +358,6 @@ public class FrameUtils {
       _frame.read_lock(_j._key);
       if (_parallel && _nParts == 1) {
         _nParts = _frame.anyVec().nChunks();
-        int processed = 0;
         String compression = H2O.getSysProperty("export.csv.cache.compression", "none");
         Log.info("Using `" + compression + "` for interim CSV export files.");
         CompressionFactory compressor = CompressionFactory.make(compression);
@@ -368,21 +365,42 @@ public class FrameUtils {
         String cacheStorage = H2O.getSysProperty("export.csv.cache.storage", "memory");
         CsvChunkCache cache = "memory".equals(cacheStorage) ? new DkvCsvChunkCache() : new FileSystemCsvChunkCache();
         ChunkExportTask chunkExportTask = cache.makeExportTask(_frame, _csv_parms, compressor);
-        H2O.submitTask(new LocalMR(chunkExportTask, H2O.NUMCPUS));
+        for (int i = 0; i < H2O.NUMCPUS; i++) {
+          chunkExportTask.copy().start();
+        }
+        long startTime = System.currentTimeMillis();
+        long writeTime = 0;
+        long remainingTime = 0;
+        List<String> dummies = new LinkedList<>();
         try (FileOutputStream os = new FileOutputStream(_path)) {
-          boolean[] isChunkCompleted = new boolean[_nParts + 1];
-          while (processed != _nParts) {
-            int cid = chunkExportTask.completed.take();
-            isChunkCompleted[cid] = true;
-            while (isChunkCompleted[processed]) {
-              try (InputStream rawInputStream = cache.getChunkCsvStream(chunkExportTask, processed);
+          byte[] buffer = new byte[BUFFER_SIZE];
+          ExportStreamResult[] exportResults = new ExportStreamResult[_nParts + 1];
+          _CURRENT = 0;
+          while (_CURRENT != _nParts) {
+            ExportStreamResult exportResult = chunkExportTask.completed.take();
+            exportResults[exportResult.chunkId] = exportResult;
+            while (exportResults[_CURRENT] != null) {
+              final int cid = exportResults[_CURRENT].chunkId;
+              final Frame.CSVStream remainingData = exportResults[cid].remainingData;
+              try (InputStream rawInputStream = cache.getChunkCsvStream(chunkExportTask, cid);
                    InputStream is = decompressor.wrapInputStream(rawInputStream)) {
-                IOUtils.copyLarge(is, os);
+                long writeStartTime = System.currentTimeMillis();
+                IOUtils.copyLarge(is, os, buffer);
+                // handle remaining CSV Stream
+                if (remainingData != null) {
+                  _CURRENT = -1;
+                  long x = System.currentTimeMillis();
                   copyCSVStream(remainingData, new BufferedOutputStream(os), cid, BUFFER_SIZE); // FIXME: buffer
+                  remainingTime += System.currentTimeMillis() - x;
+                }
+                if (cid == _nParts - 1) {
+                  os.flush(); // to make sure the timings are correct
+                }
+                writeTime += System.currentTimeMillis() - writeStartTime;
               } finally {
-                cache.releaseCache(chunkExportTask, processed);
+                cache.releaseCache(chunkExportTask, cid);
               }
-              processed++;
+              _CURRENT = cid + 1;
               _j.update(1);
             }
           }
@@ -392,6 +410,11 @@ public class FrameUtils {
           Thread.currentThread().interrupt();
           throw new RuntimeException("File export failed", e);
         }
+        long endTime = System.currentTimeMillis();
+        Log.info("File `" + _path + "` written in " + (endTime-startTime) + "ms. " +
+                "Disk operations took " + writeTime + "ms. Out of it remaining time was " + remainingTime + "ms.");
+        for (String dummy : dummies)
+          System.out.println(dummy);
         tryComplete();
       } else if (_nParts == 1) {
         // Single file export, the file should be created by the node that was asked to export the data
@@ -453,7 +476,7 @@ public class FrameUtils {
       public InputStream getChunkCsvStream(ChunkExportTask task, int cid) throws IOException {
         Key ck = Vec.chunkKey(_vecKey, cid);
         byte[] bytes = ((C1NChunk) DKV.getGet(ck)).getBytes();
-        return new ByteArrayInputStream(bytes);
+        return new FastByteArrayInputStream(bytes, bytes.length);
       }
 
       @Override
@@ -543,6 +566,9 @@ public class FrameUtils {
           _j.update(workDone);
           curChkIdx = is._curChkIdx;
         }
+        if (curChkIdx == _CURRENT) {
+          return -len - 1; 
+        }
       }
       return len;
     }
@@ -567,9 +593,12 @@ public class FrameUtils {
       }
     }
 
-    private void exportCSVStream(Frame.CSVStream is, String path, int firstChkIdx, CompressionFactory compressor) {
+    volatile int _CURRENT;
+    
+    private ExportStreamResult exportCSVStream(Frame.CSVStream is, String path, final int firstChkIdx,
+                                               CompressionFactory compressor) {
       OutputStream os = null;
-      long written = -1;
+      long written = 0;
       try {
         if (path.startsWith("hex:")) {
           Key k = Key.make(path.substring("hex:".length()));
@@ -580,6 +609,13 @@ public class FrameUtils {
           os = compressor.wrapOutputStream(os);
         }
         written = copyCSVStream(is, new BufferedOutputStream(os), firstChkIdx, BUFFER_SIZE);
+        if (written >= 0) {
+          return new ExportStreamResult(firstChkIdx, written, null);
+        } else {
+          ExportStreamResult r = new ExportStreamResult(firstChkIdx, 1 - written, is);
+          is = null;
+          return r;
+        }
       } catch (IOException e) {
         throw new RuntimeException(e);
       } finally {
@@ -592,10 +628,28 @@ public class FrameUtils {
             Log.err(e);
           }
         }
-        try { is.close(); } catch (Exception e) { Log.err(e); }
+        if (is != null) {
+          try {
+            is.close();
+          } catch (Exception e) {
+            Log.err(e);
+          }
+        }
       }
     }
 
+    class ExportStreamResult {
+      int chunkId;
+      long written;
+      Frame.CSVStream remainingData;
+
+      public ExportStreamResult(int chunkId, long written, Frame.CSVStream remainingData) {
+        this.chunkId = chunkId;
+        this.written = written;
+        this.remainingData = remainingData;
+      }
+    }
+    
     class PartExportTask extends MRTask<PartExportTask> {
       final String[] _colNames;
       final int _length;
@@ -627,24 +681,32 @@ public class FrameUtils {
       }
     }
 
-    class ChunkExportTask extends MrFun<ChunkExportTask> {
-      private transient AtomicInteger chunkIndex = new AtomicInteger(-1);
-      private transient BlockingQueue<Integer> completed = new LinkedBlockingQueue<>();
+    class ChunkExportTask extends Thread {
+      final AtomicInteger chunkIndex;
+      final BlockingQueue<ExportStreamResult> completed;
 
       final Frame _fr;
       final String[] _colNames;
       final Frame.CSVStreamParams _csv_parms;
       final CompressionFactory _compressor;
 
-      ChunkExportTask(Frame fr, String[] colNames, Frame.CSVStreamParams csvParms, CompressionFactory compressor) {
+      ChunkExportTask(Frame fr, String[] colNames, Frame.CSVStreamParams csvParms, 
+                      CompressionFactory compressor) {
+        this(fr, colNames, csvParms, compressor, new AtomicInteger(-1), new LinkedBlockingQueue<>());
+      }
+
+      ChunkExportTask(Frame fr, String[] colNames, Frame.CSVStreamParams csvParms,
+                      CompressionFactory compressor, AtomicInteger chunkIndex, BlockingQueue<ExportStreamResult> completed) {
         _fr = fr;
         _colNames = colNames;
         _csv_parms = csvParms;
         _compressor = compressor;
+        this.chunkIndex = chunkIndex;
+        this.completed = completed;
       }
 
       @Override
-      protected void map(int id) {
+      public void run() {
         final int nChunks = _fr.anyVec().nChunks(); 
         int cid;
         while ((cid = chunkIndex.incrementAndGet()) < nChunks) {
@@ -655,13 +717,17 @@ public class FrameUtils {
           }
           String chunkPath = getChunkPath(cid);
           Frame.CSVStream is = new Frame.CSVStream(cs, cid == 0 ? _colNames : null, 1, _csv_parms);
-          exportCSVStream(is, chunkPath, cid, _compressor);
-          completed.add(cid);
+          ExportStreamResult result = exportCSVStream(is, chunkPath, cid, _compressor);
+          completed.add(result);
         }
       }
 
       String getChunkPath(int cid) {
         return _path + ".chunk-" + String.valueOf(100000 + cid).substring(1);
+      }
+
+      ChunkExportTask copy() {
+        return new ChunkExportTask(_fr, _colNames, _csv_parms, _compressor, chunkIndex, completed);
       }
     }
 
@@ -673,9 +739,20 @@ public class FrameUtils {
         _k = k;
       }
 
+      InMemoryChunkExportTask(Frame fr, String[] colNames, Frame.CSVStreamParams csvParms,
+                              CompressionFactory compressor, AtomicInteger chunkIndex, BlockingQueue<ExportStreamResult> completed, Key k) {
+        super(fr, colNames, csvParms, compressor, chunkIndex, completed);
+        _k = k;
+      }
+
       @Override
       String getChunkPath(int cid) {
         return "hex:" + Vec.chunkKey(_k, cid).toString();
+      }
+
+      @Override
+      ChunkExportTask copy() {
+        return new InMemoryChunkExportTask(_fr, _colNames, _csv_parms, _compressor, chunkIndex, completed, _k);
       }
     }
   }
@@ -1199,4 +1276,56 @@ public class FrameUtils {
     final Vec labelVec = Vec.makeSeq(1, frame.numRows());
     frame.add(labelColumnName, labelVec);
   }
+  
+  public static class FastByteArrayInputStream extends InputStream {
+    /**
+     * Our byte buffer
+     */
+    protected byte[] buf = null;
+
+    /**
+     * Number of bytes that we can read from the buffer
+     */
+    protected int count = 0;
+
+    /**
+     * Number of bytes that have been read from the buffer
+     */
+    protected int pos = 0;
+
+    public FastByteArrayInputStream(byte[] buf, int count) {
+      this.buf = buf;
+      this.count = count;
+    }
+
+    public final int available() {
+      return count - pos;
+    }
+
+    public final int read() {
+      return (pos < count) ? (buf[pos++] & 0xff) : -1;
+    }
+
+    public final int read(byte[] b, int off, int len) {
+      if (pos >= count)
+        return -1;
+
+      if ((pos + len) > count)
+        len = (count - pos);
+
+      System.arraycopy(buf, pos, b, off, len);
+      pos += len;
+      return len;
+    }
+
+    public final long skip(long n) {
+      if ((pos + n) > count)
+        n = count - pos;
+      if (n < 0)
+        return 0;
+      pos += n;
+      return n;
+    }
+  }
+
 }
