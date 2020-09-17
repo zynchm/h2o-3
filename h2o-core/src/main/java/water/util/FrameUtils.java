@@ -370,6 +370,7 @@ public class FrameUtils {
         ChunkExportTask chunkExportTask = cache.makeExportTask(_frame, _csv_parms, compressor);
         H2O.submitTask(new LocalMR(chunkExportTask, H2O.NUMCPUS));
         try (FileOutputStream os = new FileOutputStream(_path)) {
+          byte[] buffer = new byte[BUFFER_SIZE];
           boolean[] isChunkCompleted = new boolean[_nParts + 1];
           while (processed != _nParts) {
             int cid = chunkExportTask.completed.take();
@@ -377,8 +378,7 @@ public class FrameUtils {
             while (isChunkCompleted[processed]) {
               try (InputStream rawInputStream = cache.getChunkCsvStream(chunkExportTask, processed);
                    InputStream is = decompressor.wrapInputStream(rawInputStream)) {
-                IOUtils.copyLarge(is, os);
-                  copyCSVStream(remainingData, new BufferedOutputStream(os), cid, BUFFER_SIZE); // FIXME: buffer
+                IOUtils.copyLarge(is, os, buffer);
               } finally {
                 cache.releaseCache(chunkExportTask, processed);
               }
@@ -571,6 +571,7 @@ public class FrameUtils {
       OutputStream os = null;
       long written = -1;
       try {
+        // FIXME: make nicer
         if (path.startsWith("hex:")) {
           Key k = Key.make(path.substring("hex:".length()));
           os = new ByteChunkOutputStream(k);
