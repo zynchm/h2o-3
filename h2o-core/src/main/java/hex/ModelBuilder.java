@@ -1248,8 +1248,8 @@ abstract public class ModelBuilder<M extends Model<M,P,O>, P extends Model.Param
       if (_parms._fold_column != null) ignoreColumnSet.remove(_parms._fold_column);
       if (_parms._offset_column != null) ignoreColumnSet.remove(_parms._offset_column);
       if (_parms._weights_column != null) ignoreColumnSet.remove(_parms._weights_column);
-      Collection<String> otherUsedColumns = getAdditionalUsedColumns();
-      for (String otherUsedColumn : otherUsedColumns) ignoreColumnSet.remove(otherUsedColumn);
+      Collection<String> additionalUsedColumns = getAdditionalUsedColumns();
+      ignoreColumnSet.removeAll(additionalUsedColumns);
       String[] actualIgnoredColumns = ignoreColumnSet.toArray(new String[0]);
       _train.remove(actualIgnoredColumns);
       if (expensive) Log.info("Dropping ignored columns: " + Arrays.toString(actualIgnoredColumns));
