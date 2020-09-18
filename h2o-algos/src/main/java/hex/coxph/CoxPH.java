@@ -16,8 +16,10 @@ import water.util.*;
 
 import static water.util.ArrayUtils.constAry;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Cox Proportional Hazards Model
@@ -149,6 +151,18 @@ public class CoxPH extends ModelBuilder<CoxPHModel,CoxPHModel.CoxPHParameters,Co
 
     if (_parms._max_iterations < 1)
       error("max_iterations", "max_iterations must be a positive integer");
+  }
+
+  @Override
+  protected Collection<String> getAdditionalUsedColumns() {
+    List<String> res = new ArrayList<>();
+    if (_parms._start_column != null) {
+      res.add(_parms._start_column);
+    }
+    if (_parms._stop_column != null) {
+      res.add(_parms._stop_column);
+    }
+    return res;
   }
 
   static class DiscretizeTimeTask extends MRTask<DiscretizeTimeTask> {

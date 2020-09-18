@@ -18,9 +18,7 @@ import water.fvec.Vec;
 import water.util.ArrayUtils;
 import water.util.Log;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 import static hex.gam.GAMModel.cleanUpInputFrame;
 import static hex.gam.MatrixFrameUtils.GamUtils.AllocateType.*;
@@ -255,6 +253,15 @@ public class GAM extends ModelBuilder<GAMModel, GAMModel.GAMParameters, GAMModel
             && response().get_type() != Vec.T_CAT){
       error("_response_column", String.format("For given response family '%s', please provide a categorical" +
               " response column. Current response column type is '%s'.", _parms._family, response().get_type_str()));
+    }
+  }
+
+  @Override
+  protected Collection<String> getAdditionalUsedColumns() {
+    if (_parms._gam_columns != null) {
+      return Arrays.asList(_parms._gam_columns);
+    } else {
+      return Collections.emptyList();
     }
   }
 

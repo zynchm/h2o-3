@@ -1243,8 +1243,16 @@ abstract public class ModelBuilder<M extends Model<M,P,O>, P extends Model.Param
 
     // Drop explicitly dropped columns
     if( _parms._ignored_columns != null ) {
-      _train.remove(_parms._ignored_columns);
-      if( expensive ) Log.info("Dropping ignored columns: "+Arrays.toString(_parms._ignored_columns));
+      Set<String> ignoreColumnSet = new HashSet<>(Arrays.asList(_parms._ignored_columns));
+      if (_parms._response_column != null) ignoreColumnSet.remove(_parms._response_column);
+      if (_parms._fold_column != null) ignoreColumnSet.remove(_parms._fold_column);
+      if (_parms._offset_column != null) ignoreColumnSet.remove(_parms._offset_column);
+      if (_parms._weights_column != null) ignoreColumnSet.remove(_parms._weights_column);
+      Collection<String> otherUsedColumns = getAdditionalUsedColumns();
+      for (String otherUsedColumn : otherUsedColumns) ignoreColumnSet.remove(otherUsedColumn);
+      String[] actualIgnoredColumns = ignoreColumnSet.toArray(new String[0]);
+      _train.remove(actualIgnoredColumns);
+      if (expensive) Log.info("Dropping ignored columns: " + Arrays.toString(actualIgnoredColumns));
     }
 
     if(_parms._checkpoint != null){
@@ -1404,8 +1412,6 @@ abstract public class ModelBuilder<M extends Model<M,P,O>, P extends Model.Param
                   _parms._weights_column != null ? _train.vec(_parms._weights_column) : v.makeCon(1.0),
                   _train.vec(_parms._response_column));
           double[] meanWeightedResponse  = mrplt.meanWeightedResponse;
-//          for (int i=0;i<len;++i)
-//            Log.info(v.domain()[i] + " -> " + meanWeightedResponse[i]);
 
           // Option 1: Order the categorical column by response to make better splits
           int[] idx=new int[len];
@@ -1417,8 +1423,6 @@ abstract public class ModelBuilder<M extends Model<M,P,O>, P extends Model.Param
           String[] newDomain = new String[len];
           for (int i = 0; i < len; ++i) newDomain[i] = v.domain()[idx[i]];
           vNew.setDomain(newDomain);
-//          for (int i=0;i<len;++i)
-//            Log.info(vNew.domain()[i] + " -> " + meanWeightedResponse[idx[i]]);
           vecs[j] = vNew;
           restructured = true;
         }
@@ -1483,6 +1487,10 @@ abstract public class ModelBuilder<M extends Model<M,P,O>, P extends Model.Param
         }
       }
     }
+  }
+  
+  protected Collection<String> getAdditionalUsedColumns() {
+    return Collections.emptyList();
   }
 
   /**
