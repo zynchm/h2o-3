@@ -56,6 +56,7 @@ public class XGBoostV3 extends ModelBuilderSchema<XGBoost,XGBoostV3,XGBoostV3.XG
 
         "score_tree_interval",
         "min_split_improvement", "gamma",
+        "multinomial_auc_type",    
 
         //runtime
         "nthread",
