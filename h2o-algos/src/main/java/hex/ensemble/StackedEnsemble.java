@@ -62,9 +62,6 @@ public class StackedEnsemble extends ModelBuilder<StackedEnsembleModel,StackedEn
     if (_parms._base_models == null)
       return false; // To be safe
 
-    // Base models can be either models or grids => we need to expand the grids
-    validateAndExpandBaseModels();
-
     // If all base models ignore const columns then stacked ensemble can safely ignore them too.
     return Stream.of(_parms._base_models)
             .map(Key::get)
@@ -88,6 +85,7 @@ public class StackedEnsemble extends ModelBuilder<StackedEnsembleModel,StackedEn
 
   @Override
   public void init(boolean expensive) {
+    expandBaseModels();
     super.init(expensive);
 
     if (_parms._distribution != DistributionFamily.AUTO) {
@@ -97,13 +95,13 @@ public class StackedEnsemble extends ModelBuilder<StackedEnsembleModel,StackedEn
     checkColumnPresent("fold", _parms._metalearner_fold_column, train(), valid(), _parms.blending());
     checkColumnPresent("weights", _parms._weights_column, train(), valid(), _parms.blending());
     checkColumnPresent("offset", _parms._offset_column, train(), valid(), _parms.blending());
-    validateAndExpandBaseModels();
+    validateBaseModels();
   }
 
   /**
-   * Validates base models and if grid is provided instead of a model it gets expanded.
+   * Expand base models - if a grid is provided instead of a model it gets expanded in to individual models.
    */
-  private void validateAndExpandBaseModels() {
+  private void expandBaseModels() {
     // H2O Flow initializes SE with no base_models
     if (_parms._base_models == null) return;
 
@@ -122,6 +120,14 @@ public class StackedEnsemble extends ModelBuilder<StackedEnsembleModel,StackedEn
       }
     }
     _parms._base_models = baseModels.toArray(new Key[0]);
+  }
+
+  /**
+   * Validates base models.
+   */
+  private void validateBaseModels() {
+    // H2O Flow initializes SE with no base_models
+    if (_parms._base_models == null) return;
 
     boolean warnSameWeightsColumns = true;
     String referenceWeightsColumn = null;
