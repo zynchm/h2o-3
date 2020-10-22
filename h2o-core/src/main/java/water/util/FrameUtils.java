@@ -580,7 +580,7 @@ public class FrameUtils {
         if (compressor != null) {
           os = compressor.wrapOutputStream(os);
         }
-        written = copyCSVStream(is, new BufferedOutputStream(os), firstChkIdx, BUFFER_SIZE);
+        written = copyCSVStream(is, os, firstChkIdx);
       } catch (IOException e) {
         throw new RuntimeException(e);
       } finally {
