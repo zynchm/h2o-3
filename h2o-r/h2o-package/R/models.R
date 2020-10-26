@@ -5069,3 +5069,14 @@ h2o.reset_threshold <- function(object, threshold) {
     return(NULL)
   }
 }
+
+#' Get domains for categorical columns
+#' @param model an h2o model
+.h2o.__get_domain_mapping <- function(model) {
+  domains_response <- .h2o.__remoteSend(paste0("Models/", model@model_id,"/domains"), method = "GET",
+                                        h2oRestApiVersion = 3)
+
+  domains <- domains_response$domains
+  domains <- stats::setNames(domains, domains_response$names)
+  domains
+}

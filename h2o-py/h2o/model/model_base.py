@@ -1712,6 +1712,13 @@ class ModelBase(h2o_meta(Keyed)):
         """DEPRECATED. Use :meth:`scoring_history` instead."""
         return self.scoring_history()
 
+    def get_domain_mapping(self):
+        """
+
+        :return: Mapping column -> factors
+        """
+        res = h2o.api("GET /3/Models/{}/domains".format(self.model_id))
+        return dict(zip(res["names"], res["domains"]))
 
 
 

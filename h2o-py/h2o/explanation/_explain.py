@@ -1329,14 +1329,16 @@ def _consolidate_varimps(model):
     consolidated_varimps = {k: v for k, v in varimp.items() if k in x}
     to_process = {k: v for k, v in varimp.items() if k not in x}
 
+    domain_mapping = model.get_domain_mapping()
+    varimp_to_col = {"{}.{}".format(name, domain): name
+                     for name, domains in domain_mapping.items()
+                     if domains is not None
+                     for domain in domains + ["missing(NA)"]
+                     }
     for feature in to_process.keys():
-        col_parts = feature.split(".")
-        for i in range(1, len(col_parts) + 1)[::-1]:
-            if ".".join(col_parts[:i]) in x:
-                column = ".".join(col_parts[:i])
-                consolidated_varimps[column] = consolidated_varimps.get(column, 0) + to_process[
-                    feature]
-                break
+        if feature in varimp_to_col:
+            column = varimp_to_col[feature]
+            consolidated_varimps[column] = consolidated_varimps.get(column, 0) + to_process[feature]
         else:
             raise RuntimeError("Cannot find feature {}".format(feature))
 
