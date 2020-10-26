@@ -17,9 +17,6 @@ import hex.tree.xgboost.predict.XGBoostVariableImportance;
 import hex.tree.xgboost.remote.SteamExecutorStarter;
 import hex.tree.xgboost.util.FeatureScore;
 import hex.util.CheckpointUtils;
-import ai.h2o.xgboost4j.java.DMatrix;
-import ai.h2o.xgboost4j.java.Rabit;
-import ai.h2o.xgboost4j.java.XGBoostError;
 import org.apache.log4j.Logger;
 import water.*;
 import water.exceptions.H2OIllegalArgumentException;
@@ -32,13 +29,11 @@ import water.util.Timer;
 import water.util.TwoDimTable;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 
 import static hex.tree.SharedTree.createModelSummaryTable;
 import static hex.tree.SharedTree.createScoringHistoryTable;
+import static hex.tree.xgboost.util.GpuUtils.*;
 import static water.H2O.technote;
 
 /** Gradient Boosted Trees
@@ -85,7 +80,7 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
 
   @Override protected int nModelsInParallel(int folds) {
     if (XGBoostModel.getActualBackend(_parms, false) == XGBoostModel.XGBoostParameters.Backend.gpu) {
-      return 1;
+      return numGPUs(H2O.CLOUD.members()[0]);
     } else {
       return nModelsInParallel(folds, 2);
     }
@@ -622,85 +617,14 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
     return new XgbVarImp(names, gains, covers, freqs);
   }
 
-  private static volatile boolean DEFAULT_GPU_BLACKLISTED = false;
-  private static Set<Integer> GPUS = new HashSet<>();
-
-  static boolean hasGPU(H2ONode node, int gpu_id) {
-    final boolean hasGPU;
-    if (H2O.SELF.equals(node)) {
-      hasGPU = hasGPU(gpu_id);
+  @Override
+  protected BulkModelBuilder makeBulkModelBuilder(
+      String modelType, Job job, ModelBuilder<?, ?, ?>[] modelBuilders, int parallelization, int updateInc
+  ) {
+    if (XGBoostModel.getActualBackend(_parms, false) == XGBoostModel.XGBoostParameters.Backend.gpu && parallelization > 1) {
+      return new XGBoostGPUBulkModelBuilder(modelType, job, modelBuilders, parallelization, updateInc, allGPUs());      
     } else {
-      HasGPUTask t = new HasGPUTask(gpu_id);
-      new RPC<>(node, t).call().get();
-      hasGPU = t._hasGPU;
-    }
-    LOG.debug("Availability of GPU (id=" + gpu_id + ") on node " + node + ": " + hasGPU);
-    return hasGPU;
-  }
-
-  private static class HasGPUTask extends DTask<HasGPUTask> {
-    private final int _gpu_id;
-    // OUT
-    private boolean _hasGPU;
-
-    private HasGPUTask(int gpu_id) { _gpu_id = gpu_id; }
-
-    @Override
-    public void compute2() {
-      _hasGPU = hasGPU(_gpu_id);
-      tryComplete();
-    }
-  }
-
-  private static boolean hasGPU(int gpu_id) {
-    if (gpu_id == 0 && DEFAULT_GPU_BLACKLISTED) // quick default path & no synchronization - if we already know we don't have the default GPU, let's not to find out again
-      return false;
-    boolean hasGPU = hasGPU_impl(gpu_id);
-    if (gpu_id == 0 && !hasGPU) {
-      DEFAULT_GPU_BLACKLISTED = true; // this can never change back
-    }
-    return hasGPU;
-  }
-
-  // helper
-  private static synchronized boolean hasGPU_impl(int gpu_id) {
-    if (! XGBoostExtension.isGpuSupportEnabled()) {
-      return false;
-    }
-
-    if(GPUS.contains(gpu_id)) {
-      return true;
-    }
-
-    DMatrix trainMat;
-    try {
-      trainMat = new DMatrix(new float[]{1,2,1,2},2,2);
-      trainMat.setLabel(new float[]{1,0});
-    } catch (XGBoostError xgBoostError) {
-      throw new IllegalStateException("Couldn't prepare training matrix for XGBoost.", xgBoostError);
-    }
-
-    HashMap<String, Object> params = new HashMap<>();
-    params.put("updater", "grow_gpu_hist");
-    params.put("silent", 1);
-
-    params.put("gpu_id", gpu_id);
-    HashMap<String, DMatrix> watches = new HashMap<>();
-    watches.put("train", trainMat);
-    try {
-      Map<String, String> localRabitEnv = new HashMap<>();
-      Rabit.init(localRabitEnv);
-      ai.h2o.xgboost4j.java.XGBoost.train(trainMat, params, 1, watches, null, null);
-      GPUS.add(gpu_id);
-      return true;
-    } catch (XGBoostError xgBoostError) {
-      return false;
-    } finally {
-      try {
-        Rabit.shutdown();
-      } catch (XGBoostError e) {
-        LOG.warn("Cannot shutdown XGBoost Rabit for current thread.");
-      }
+      return super.makeBulkModelBuilder(modelType, job, modelBuilders, parallelization, updateInc);
     }
   }
 

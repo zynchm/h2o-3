@@ -12,6 +12,7 @@ import hex.genmodel.algos.xgboost.XGBoostMojoModel;
 import hex.genmodel.utils.DistributionFamily;
 import hex.tree.PlattScalingHelper;
 import hex.tree.xgboost.predict.*;
+import hex.tree.xgboost.util.GpuUtils;
 import hex.tree.xgboost.util.PredictConfiguration;
 import hex.util.EffectiveParametersUtils;
 import org.apache.log4j.Logger;
@@ -29,6 +30,7 @@ import java.util.stream.Stream;
 
 import static hex.genmodel.algos.xgboost.XGBoostMojoModel.ObjectiveType;
 import static hex.tree.xgboost.XGBoost.makeDataInfo;
+import static hex.tree.xgboost.util.GpuUtils.hasGPU;
 import static water.H2O.OptArgs.SYSTEM_PROP_PREFIX;
 
 public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParameters, XGBoostOutput> 
@@ -274,7 +276,7 @@ public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParame
       } else if (! p.gpuIncompatibleParams().isEmpty()) {
         log.accept("GPU backend not supported for the choice of parameters (" + p.gpuIncompatibleParams() + "). Using CPU backend.");
         return XGBoostParameters.Backend.cpu;
-      } else if (XGBoost.hasGPU(H2O.CLOUD.members()[0], p._gpu_id)) {
+      } else if (hasGPU(H2O.CLOUD.members()[0], p._gpu_id)) {
         log.accept("Using GPU backend (gpu_id: " + p._gpu_id + ").");
         return XGBoostParameters.Backend.gpu;
       } else {
