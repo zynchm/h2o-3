@@ -13,6 +13,8 @@ import java.util.*;
 public class GpuUtils {
 
     private static final Logger LOG = Logger.getLogger(GpuUtils.class);
+    
+    private static final int[] DEFAULT_GPU_ID = new int[] { 0 };
 
     private static volatile boolean defaultGpuIdNotValid = false;
     private static volatile boolean gpuSearchPerformed = false;
@@ -64,14 +66,14 @@ public class GpuUtils {
     public static Set<Integer> allGPUs() {
         if (gpuSearchPerformed) return Collections.unmodifiableSet(GPUS);
         int nextGpuId = 0;
-        while (hasGPU(nextGpuId)) {
+        while (hasGPU(new int[] { nextGpuId })) {
             nextGpuId++;
         }
         gpuSearchPerformed = true;
         return Collections.unmodifiableSet(GPUS);
     }
 
-    public static boolean hasGPU(H2ONode node, int gpu_id) {
+    public static boolean hasGPU(H2ONode node, int[] gpu_id) {
         final boolean hasGPU;
         if (H2O.SELF.equals(node)) {
             hasGPU = hasGPU(gpu_id);
@@ -80,16 +82,16 @@ public class GpuUtils {
             new RPC<>(node, t).call().get();
             hasGPU = t._hasGPU;
         }
-        LOG.debug("Availability of GPU (id=" + gpu_id + ") on node " + node + ": " + hasGPU);
+        LOG.debug("Availability of GPU (id=" + Arrays.toString(gpu_id) + ") on node " + node + ": " + hasGPU);
         return hasGPU;
     }
 
     private static class HasGPUTask extends DTask<HasGPUTask> {
-        private final int _gpu_id;
+        private final int[] _gpu_id;
         // OUT
         private boolean _hasGPU;
 
-        private HasGPUTask(int gpu_id) {
+        private HasGPUTask(int[] gpu_id) {
             _gpu_id = gpu_id;
         }
 
@@ -100,11 +102,15 @@ public class GpuUtils {
         }
     }
 
-    public static boolean hasGPU(int gpu_id) {
-        if (gpu_id == 0 && defaultGpuIdNotValid) // quick default path & no synchronization - if we already know we don't have the default GPU, let's not to find out again
+    public static boolean hasGPU(int[] gpu_id) {
+        if (gpu_id == null && defaultGpuIdNotValid) // quick default path & no synchronization - if we already know we don't have the default GPU, let's not to find out again
             return false;
-        boolean hasGPU = hasGPU_impl(gpu_id);
-        if (gpu_id == 0 && !hasGPU) {
+        boolean hasGPU = true;
+        if (gpu_id == null) gpu_id = DEFAULT_GPU_ID;
+        for (int i = 0; hasGPU && i < gpu_id.length; i++) {
+            hasGPU = hasGPU_impl(gpu_id[i]);
+        }
+        if (gpu_id == null && !hasGPU) {
             defaultGpuIdNotValid = true; // this can never change back
         }
         return hasGPU;

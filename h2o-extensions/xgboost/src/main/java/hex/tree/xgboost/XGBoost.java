@@ -29,6 +29,7 @@ import water.util.Timer;
 import water.util.TwoDimTable;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
 
 import static hex.tree.SharedTree.createModelSummaryTable;
@@ -80,7 +81,11 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
 
   @Override protected int nModelsInParallel(int folds) {
     if (XGBoostModel.getActualBackend(_parms, false) == XGBoostModel.XGBoostParameters.Backend.gpu) {
-      return numGPUs(H2O.CLOUD.members()[0]);
+      if (_parms._gpu_id != null && _parms._gpu_id.length > 0) {
+        return _parms._gpu_id.length;
+      } else {
+        return numGPUs(H2O.CLOUD.members()[0]);
+      }
     } else {
       return nModelsInParallel(folds, 2);
     }
@@ -162,7 +167,7 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
 
     if ( _parms._backend == XGBoostModel.XGBoostParameters.Backend.gpu) {
       if (! hasGPU(_parms._gpu_id))
-        error("_backend", "GPU backend (gpu_id: " + _parms._gpu_id + ") is not functional. Check CUDA_PATH and/or GPU installation.");
+        error("_backend", "GPU backend (gpu_id: " + Arrays.toString(_parms._gpu_id) + ") is not functional. Check CUDA_PATH and/or GPU installation.");
 
       if (H2O.getCloudSize() > 1 && !_parms._build_tree_one_node)
         error("_backend", "GPU backend is not supported in distributed mode.");
@@ -333,8 +338,11 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
     final void buildModel() {
       if ((XGBoostModel.XGBoostParameters.Backend.auto.equals(_parms._backend) || XGBoostModel.XGBoostParameters.Backend.gpu.equals(_parms._backend)) &&
               hasGPU(_parms._gpu_id) && H2O.getCloudSize() == 1 && _parms.gpuIncompatibleParams().isEmpty()) {
-        synchronized (XGBoostGPULock.lock(_parms._gpu_id)) {
+        try {
+          XGBoostGPULock.lock(_parms._gpu_id);
           buildModelImpl();
+        } finally {
+          XGBoostGPULock.unlock(_parms._gpu_id);
         }
       } else {
         buildModelImpl();
@@ -622,7 +630,7 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
       String modelType, Job job, ModelBuilder<?, ?, ?>[] modelBuilders, int parallelization, int updateInc
   ) {
     if (XGBoostModel.getActualBackend(_parms, false) == XGBoostModel.XGBoostParameters.Backend.gpu && parallelization > 1) {
-      return new XGBoostGPUBulkModelBuilder(modelType, job, modelBuilders, parallelization, updateInc, allGPUs());      
+      return new XGBoostGPUBulkModelBuilder(modelType, job, modelBuilders, parallelization, updateInc, _parms._gpu_id);      
     } else {
       return super.makeBulkModelBuilder(modelType, job, modelBuilders, parallelization, updateInc);
     }

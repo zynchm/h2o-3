@@ -135,7 +135,7 @@ public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParame
     public float _rate_drop = 0;
     public boolean _one_drop = false;
     public float _skip_drop = 0;
-    public int _gpu_id = 0; // which GPU to use
+    public int[] _gpu_id; // which GPU to use
     public Backend _backend = Backend.auto;
 
     public String algoName() { return "XGBoost"; }
@@ -277,10 +277,10 @@ public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParame
         log.accept("GPU backend not supported for the choice of parameters (" + p.gpuIncompatibleParams() + "). Using CPU backend.");
         return XGBoostParameters.Backend.cpu;
       } else if (hasGPU(H2O.CLOUD.members()[0], p._gpu_id)) {
-        log.accept("Using GPU backend (gpu_id: " + p._gpu_id + ").");
+        log.accept("Using GPU backend (gpu_id: " + Arrays.toString(p._gpu_id) + ").");
         return XGBoostParameters.Backend.gpu;
       } else {
-        log.accept("No GPU (gpu_id: " + p._gpu_id + ") found. Using CPU backend.");
+        log.accept("No GPU (gpu_id: " + Arrays.toString(p._gpu_id) + ") found. Using CPU backend.");
         return XGBoostParameters.Backend.cpu;
       }
     } else {
@@ -369,7 +369,11 @@ public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParame
     XGBoostParameters.Backend actualBackend = getActualBackend(p, true);
     XGBoostParameters.TreeMethod actualTreeMethod = getActualTreeMethod(p);
     if (actualBackend == XGBoostParameters.Backend.gpu) {
-      params.put("gpu_id", p._gpu_id);
+      if (p._gpu_id != null && p._gpu_id.length > 0) {
+        params.put("gpu_id", p._gpu_id[0]);
+      } else {
+        params.put("gpu_id", 0);
+      }
       // we are setting updater rather than tree_method here to keep CPU predictor, which is faster
       if (p._booster == XGBoostParameters.Booster.gblinear) {
         LOG.info("Using gpu_coord_descent updater."); 

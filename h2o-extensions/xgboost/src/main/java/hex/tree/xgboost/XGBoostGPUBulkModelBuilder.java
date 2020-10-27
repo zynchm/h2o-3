@@ -2,12 +2,12 @@ package hex.tree.xgboost;
 
 import hex.BulkModelBuilder;
 import hex.ModelBuilder;
+import hex.tree.xgboost.util.GpuUtils;
 import org.apache.log4j.Logger;
 import water.Job;
 
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.Set;
+import javax.sound.sampled.Line;
+import java.util.*;
 
 public class XGBoostGPUBulkModelBuilder extends BulkModelBuilder {
 
@@ -21,25 +21,29 @@ public class XGBoostGPUBulkModelBuilder extends BulkModelBuilder {
         ModelBuilder<?, ?, ?>[] modelBuilders,
         int parallelization,
         int updateInc,
-        Set<Integer> gpuIds
+        int[] gpuIds
     ) {
         super(modelType, job, modelBuilders, parallelization, updateInc);
-        availableGpus = new LinkedList<>(gpuIds);
+        if (gpuIds != null && gpuIds.length > 0) {
+            availableGpus = new LinkedList<>();
+            for (int id : gpuIds) availableGpus.add(id);
+        } else {
+            availableGpus = new LinkedList<>(GpuUtils.allGPUs());
+        }
         LOG.info("Using parallel GPU building on " + availableGpus.size() + " GPUs.");
-        
     }
 
     @Override
     protected void prepare(ModelBuilder m) {
         XGBoost xgb = (XGBoost) m;
-        xgb._parms._gpu_id = availableGpus.pop();
-        LOG.info("Building " + xgb.dest() + " on GPU " + xgb._parms._gpu_id);
+        xgb._parms._gpu_id = new int[] { availableGpus.pop() };
+        LOG.info("Building " + xgb.dest() + " on GPU " + xgb._parms._gpu_id[0]);
     }
 
     @Override
     protected void finished(ModelBuilder m) {
         XGBoost xgb = (XGBoost) m;
-        availableGpus.push(xgb._parms._gpu_id);
+        availableGpus.push(xgb._parms._gpu_id[0]);
     }
 
 }
