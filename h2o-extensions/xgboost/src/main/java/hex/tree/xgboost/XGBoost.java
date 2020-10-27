@@ -36,9 +36,9 @@ import static hex.tree.SharedTree.createScoringHistoryTable;
 import static hex.tree.xgboost.util.GpuUtils.*;
 import static water.H2O.technote;
 
-/** Gradient Boosted Trees
- *
- *  Based on "Elements of Statistical Learning, Second Edition, page 387"
+/** 
+ * Gradient Boosted Trees
+ * Based on "Elements of Statistical Learning, Second Edition, page 387"
  */
 public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParameters,XGBoostOutput> 
     implements PlattScalingHelper.ModelBuilderWithCalibration<XGBoostModel, XGBoostModel.XGBoostParameters, XGBoostOutput> {
