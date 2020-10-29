@@ -338,11 +338,12 @@ public class XGBoost extends ModelBuilder<XGBoostModel,XGBoostModel.XGBoostParam
     final void buildModel() {
       if ((XGBoostModel.XGBoostParameters.Backend.auto.equals(_parms._backend) || XGBoostModel.XGBoostParameters.Backend.gpu.equals(_parms._backend)) &&
               hasGPU(_parms._gpu_id) && H2O.getCloudSize() == 1 && _parms.gpuIncompatibleParams().isEmpty()) {
+        int[] lockedGpus = null;
         try {
-          XGBoostGPULock.lock(_parms._gpu_id);
+          lockedGpus = XGBoostGPULock.lock(_parms._gpu_id);
           buildModelImpl();
         } finally {
-          XGBoostGPULock.unlock(_parms._gpu_id);
+          if (lockedGpus != null) XGBoostGPULock.unlock(lockedGpus);
         }
       } else {
         buildModelImpl();

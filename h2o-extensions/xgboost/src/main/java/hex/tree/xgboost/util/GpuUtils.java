@@ -14,7 +14,7 @@ public class GpuUtils {
 
     private static final Logger LOG = Logger.getLogger(GpuUtils.class);
     
-    private static final int[] DEFAULT_GPU_ID = new int[] { 0 };
+    public static final int[] DEFAULT_GPU_ID = new int[] { 0 };
 
     private static volatile boolean defaultGpuIdNotValid = false;
     private static volatile boolean gpuSearchPerformed = false;

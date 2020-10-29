@@ -4,15 +4,21 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static hex.tree.xgboost.util.GpuUtils.DEFAULT_GPU_ID;
+
 class XGBoostGPULock {
 
     private static final Map<Integer, ReentrantLock> LOCKS = new HashMap<>();
 
-    static void lock(int[] gpuIds) {
+    static int[] lock(int[] gpuIds) {
+        if (gpuIds == null) {
+            gpuIds = DEFAULT_GPU_ID;
+        }
         initLocks(gpuIds);
         for (int id : gpuIds) {
             LOCKS.get(id).lock();
         }
+        return gpuIds;
     }
 
     static void unlock(int[] gpuIds) {
@@ -20,7 +26,6 @@ class XGBoostGPULock {
             LOCKS.get(id).unlock();
         }
     }
-
 
     private static void initLocks(int[] gpuIds) {
         boolean allPresent = true;
