@@ -2069,7 +2069,7 @@ class H2OXGBoostEstimator(H2OEstimator):
 
     @gpu_id.setter
     def gpu_id(self, gpu_id):
-        assert_is_type(gpu_id, None, [int])
+        assert_is_type(gpu_id, None, int, [int])
         self._parms["gpu_id"] = gpu_id
 
 
