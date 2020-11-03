@@ -808,11 +808,6 @@ public abstract class SharedTree<
     _calib = f;
   }
 
-  @Override
-  protected boolean canLearnFromNAs() {
-    return true;
-  }
-
   protected void addCustomInfo(O out) {
     // nothing by default - can be overridden in subclasses
   }

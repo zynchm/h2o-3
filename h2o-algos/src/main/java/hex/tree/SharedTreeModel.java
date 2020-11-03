@@ -110,6 +110,10 @@ public abstract class SharedTreeModel<
       return this;
     }
 
+    @Override
+    public boolean canLearnFromNAs() {
+      return true;
+    }
   }
 
   @Override public ModelMetrics.MetricBuilder makeMetricBuilder(String[] domain) {

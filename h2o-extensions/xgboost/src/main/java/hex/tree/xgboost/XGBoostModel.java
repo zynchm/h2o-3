@@ -206,6 +206,10 @@ public class XGBoostModel extends Model<XGBoostModel, XGBoostModel.XGBoostParame
         "_tree_method", "_grow_policy", "_booster", "_sample_rate", "_max_depth", "_min_rows" 
     };
 
+    @Override
+    public boolean canLearnFromNAs() {
+      return true;
+    }
   }
 
   @Override

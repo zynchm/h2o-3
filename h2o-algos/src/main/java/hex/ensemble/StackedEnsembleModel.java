@@ -14,6 +14,7 @@ import water.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static hex.Model.Parameters.FoldAssignmentScheme.AUTO;
@@ -99,6 +100,40 @@ public class StackedEnsembleModel extends Model<StackedEnsembleModel,StackedEnse
     
     public final Frame blending() { return _blending == null ? null : _blending.get(); }
 
+    private boolean allMatchPredicateOnBaseModels(Predicate<Model> predicate) {
+      if (_base_models == null)
+        return true;
+
+      return Stream.of(_base_models)
+              .map(Key::get)
+              .allMatch(predicate);
+    }
+
+    @Override
+    public boolean ignoreConstColumns() {
+      return allMatchPredicateOnBaseModels(model -> model._parms.ignoreConstColumns());
+    }
+
+    @Override
+    public boolean ignoreStringColumns() {
+      return allMatchPredicateOnBaseModels(model -> model._parms.ignoreConstColumns());
+    }
+
+    @Override
+    public boolean ignoreUuidColumns() {
+      return allMatchPredicateOnBaseModels(model -> model._parms.ignoreUuidColumns());
+    }
+
+    @Override
+    public boolean canLearnFromNAs() {
+      if (_base_models == null)
+        return true;
+
+      // If any base model can use NAs then stacked ensemble can't filter it out.
+      return Stream.of(_base_models)
+              .map(Key::get)
+              .anyMatch(model -> model._parms.canLearnFromNAs());
+    }
   }
 
   public static class StackedEnsembleOutput extends Model.Output {

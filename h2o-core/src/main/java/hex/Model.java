@@ -521,6 +521,20 @@ public abstract class Model<M extends Model<M,P,O>, P extends Model.Parameters, 
       xs ^= (train() == null ? 43 : train().checksum()) * (valid() == null ? 17 : valid().checksum());
       return xs;
     }
+
+
+    public boolean ignoreStringColumns() {
+      return true;
+    }
+    public boolean ignoreConstColumns() {
+      return _ignore_const_cols;
+    }
+    public boolean ignoreUuidColumns() {
+      return true;
+    }
+    public boolean canLearnFromNAs() {
+      return false;
+    }
   }
 
   public ModelMetrics addModelMetrics(final ModelMetrics mm) {
