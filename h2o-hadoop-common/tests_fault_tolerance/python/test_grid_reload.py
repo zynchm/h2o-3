@@ -60,7 +60,7 @@ class FrameReloadTest(unittest.TestCase):
             for x in sorted(loaded.model_ids):
                 print(x)
             print("Newly grained grid has %d models" % len(loaded.model_ids))
-            self.assertEqual(len(loaded.model_ids), grid_size, "The full grid was not trained."
+            self.assertEqual(len(loaded.model_ids), grid_size, "The full grid was not trained.")
             h2o.connection().close()
         finally:
             utils.stop_cluster("loader")
