@@ -11,8 +11,7 @@ from h2o.estimators.gbm import H2OGradientBoostingEstimator
 import unittest
 
 
-
-class FrameReloadTest(unittest.TestCase):
+class GridReloadTest(unittest.TestCase):
 
     def test_frame_reload(self):
         name_node = pyunit_utils.hadoop_namenode()
@@ -30,7 +29,7 @@ class FrameReloadTest(unittest.TestCase):
         }
         
         try:
-            cluster_1 = utils.start_cluster("saver")
+            cluster_1 = utils.start_cluster("grid1")
             h2o.connect(url=cluster_1)
             train = h2o.import_file(path="hdfs://%s%s" % (name_node, dataset))
             grid = H2OGridSearch(
@@ -44,10 +43,10 @@ class FrameReloadTest(unittest.TestCase):
             time.sleep(10)
             h2o.connection().close()
         finally:
-            utils.stop_cluster("saver")
+            utils.stop_cluster("grid1")
         
         try:
-            cluster_2 = utils.start_cluster("loader")
+            cluster_2 = utils.start_cluster("grid2")
             h2o.connect(url=cluster_2)
             loaded_train = h2o.H2OFrame.get_frame(train.frame_id)
             loaded = h2o.load_grid("%s/%s" % (work_dir, grid_id), load_frames=True)
@@ -63,7 +62,7 @@ class FrameReloadTest(unittest.TestCase):
             self.assertEqual(len(loaded.model_ids), grid_size, "The full grid was not trained.")
             h2o.connection().close()
         finally:
-            utils.stop_cluster("loader")
+            utils.stop_cluster("grid2")
 
 
 if __name__ == '__main__':
