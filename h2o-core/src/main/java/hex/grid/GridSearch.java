@@ -230,7 +230,7 @@ public final class GridSearch<MP extends Model.Parameters> extends Keyed<GridSea
       try {
         parallelSearchGridLock.lock();
         constructScoringInfo(finishedModel);
-        putModel(grid, finishedModel._parms.checksum(IGNORED_FIELDS_PARAM_HASH), finishedModel._key);
+        grid.putModel(finishedModel._parms.checksum(IGNORED_FIELDS_PARAM_HASH), finishedModel._key);
 
         _job.update(1);
         grid.update(_job);
@@ -549,7 +549,7 @@ public final class GridSearch<MP extends Model.Parameters> extends Keyed<GridSea
     }).keys();
 
     if (modelKeys.length > 0) {
-      putModel(grid, checksum, modelKeys[0]);
+      grid.putModel(checksum, modelKeys[0]);
       return modelKeys[0].get();
     }
 
@@ -562,14 +562,10 @@ public final class GridSearch<MP extends Model.Parameters> extends Keyed<GridSea
     // FIXME: we should allow here any launching strategy (not only sequential)
     assert grid.getModel(params) == null;
     Model m = ModelBuilder.trainModelNested(_job, result, params, null);
-    putModel(grid, checksum, result);
+    grid.putModel(checksum, result);
     return m;
   }
   
-  private void putModel(Grid grid, long checksum, Key<Model> key) {
-    grid.putModel(checksum, key);
-  }
-
   /**
    * Defines a key for a new Grid object holding results of grid search.
    *
@@ -635,7 +631,7 @@ public final class GridSearch<MP extends Model.Parameters> extends Keyed<GridSea
    * @return GridSearch Job, with models run with these parameters, built as needed - expected to be
    * an expensive operation.  If the models in question are "in progress", a 2nd build will NOT be
    * kicked off.  This is a non-blocking call.
-   * @see #startGridSearch(Key, Model.Parameters, Map, ModelParametersBuilderFactory, HyperSpaceSearchCriteria, String, int)
+   * @see #startGridSearch(Key, Model.Parameters, Map, ModelParametersBuilderFactory, HyperSpaceSearchCriteria, boolean, int)
    */
   public static <MP extends Model.Parameters> Job<Grid> startGridSearch(
           final Key<Grid> destKey,
@@ -669,7 +665,7 @@ public final class GridSearch<MP extends Model.Parameters> extends Keyed<GridSea
    * an expensive operation.  If the models in question are "in progress", a 2nd build will NOT be
    * kicked off.  This is a non-blocking call.
    *
-   * @see #startGridSearch(Key, Model.Parameters, Map, ModelParametersBuilderFactory, HyperSpaceSearchCriteria, String, int)
+   * @see #startGridSearch(Key, Model.Parameters, Map, ModelParametersBuilderFactory, HyperSpaceSearchCriteria, boolean, int)
    */
   public static <MP extends Model.Parameters> Job<Grid> startGridSearch(
           final Key<Grid> destKey,
