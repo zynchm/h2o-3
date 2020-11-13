@@ -41,7 +41,7 @@ class GridReloadTest(unittest.TestCase):
             )
             print("starting initial grid and sleeping...")
             grid.start(x=list(range(4)), y=4, training_frame=train)
-            time.sleep(10)
+            time.sleep(30)
             print("done sleeping")
             h2o.connection().close()
         finally:
@@ -50,8 +50,8 @@ class GridReloadTest(unittest.TestCase):
         try:
             cluster_2 = utils.start_cluster("grid2-py")
             h2o.connect(url=cluster_2)
-            loaded_train = h2o.H2OFrame.get_frame(train.frame_id)
             loaded = h2o.load_grid("%s/%s" % (work_dir, grid_id), load_frames=True)
+            loaded_train = h2o.H2OFrame.get_frame(train.frame_id)
             print("models after first run:")
             for x in sorted(loaded.model_ids):
                 print(x)
