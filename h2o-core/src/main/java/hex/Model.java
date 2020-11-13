@@ -399,6 +399,26 @@ public abstract class Model<M extends Model<M,P,O>, P extends Model.Parameters, 
     /** @return the validation frame instance, or null
      *  if a validation frame was not specified */
     public final Frame valid() { return _valid==null ? null : _valid.get(); }
+
+    /**
+     * @return all Frames used by these params
+     */
+    public final Map<String, Frame> getAllFrames() {
+      Map<String, Frame> framesMap = new HashMap<>();
+      collectAllFrames(framesMap);
+      return framesMap;
+    }
+    
+    protected void collectAllFrames(Map<String, Frame> map) {
+      collectFrame(map, "train", _train);
+      collectFrame(map, "valid", _valid);
+    }
+    
+    protected void collectFrame(Map<String, Frame> map, String name, Key<Frame> key) {
+      if (key != null) {
+        map.put(name, key.get());
+      }
+    }
     
     public String[] getNonPredictors() {
         return Arrays.stream(new String[]{_weights_column, _offset_column, _fold_column, _response_column})
